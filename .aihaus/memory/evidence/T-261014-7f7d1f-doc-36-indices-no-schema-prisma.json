@@ -1,0 +1,63 @@
+{
+  "schema": "aihaus.evidence.v1",
+  "verdict": "PASS",
+  "commit": "28ca8ce",
+  "acceptance": [
+    {
+      "criterion": "schema.prisma declara @@index nas 8 FKs e nas colunas quentes (Document isArchived+status, expirationDate, createdAt; AuditLog timestamp, documentId; GCalSyncLog documentId+lastSyncedAt)",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npx prisma validate && npx prisma migrate diff --from-url <scratch> --to-schema-datamodel prisma/schema.prisma --exit-code",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "criterion": "Migration nova aplica os indices e pg_trgm + GIN trigram em documents.title",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "DATABASE_URL=<postgres:16 descartavel> npx prisma migrate deploy",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "criterion": "prisma validate/generate e suites verdes",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npx prisma generate && npx vitest run && npm run build (checkout limpo 28ca8ce)",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "criterion": "EXPLAIN ANALYZE com volume representativo documentado (degradado se Docker indisponivel)",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "ran",
+          "source": "tool",
+          "command": "executor: EXPLAIN (ANALYZE, BUFFERS) antes/depois com 10k docs/30k versoes/200k audit/50k gcal",
+          "exit_code": 0
+        },
+        {
+          "rung": "written",
+          "artifact": "docs/perf/doc-36-indices.md"
+        }
+      ]
+    }
+  ]
+}

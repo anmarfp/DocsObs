@@ -48,6 +48,7 @@ model CompanyConfig {
   updatedById      String?          @map("updated_by_id")
   updatedBy        User?            @relation("CompanyConfigUpdater", fields: [updatedById], references: [id])
 
+  @@index([updatedById])
   @@map("company_config")
 }
 
@@ -109,6 +110,20 @@ model Document {
   auditLogs    AuditLog[]
   gcalSyncLogs GCalSyncLog[]
 
+  @@index([categoryId])
+  @@index([createdById])
+  // Contagens do dashboard por status e cron (isArchived = false AND status IN ...).
+  @@index([isArchived, status])
+  // Faixas de vencimento (dashboard 30 dias, calendario) com ORDER BY expirationDate.
+  @@index([expirationDate])
+  // Listagem padrao ORDER BY createdAt DESC.
+  @@index([createdAt])
+  // Busca da listagem: OR de ILIKE '%termo%' em title/issuingBody/responsibleName/notes.
+  // Um unico GIN trigram multicoluna permite BitmapOr sobre os quatro ramos; um
+  // indice so em title nao e usado, pois os outros ramos do OR forcam seq scan.
+  // Requer a extensao pg_trgm, criada em SQL bruto na migration
+  // 20261014144718_add_indexes (o schema nao usa a preview postgresqlExtensions).
+  @@index([title(ops: raw("gin_trgm_ops")), issuingBody(ops: raw("gin_trgm_ops")), responsibleName(ops: raw("gin_trgm_ops")), notes(ops: raw("gin_trgm_ops"))], type: Gin, map: "documents_search_trgm_idx")
   @@map("documents")
 }
 
@@ -126,6 +141,8 @@ model DocumentVersion {
   renewedBy          User      @relation("VersionRenewer", fields: [renewedById], references: [id])
   createdAt          DateTime  @default(now()) @map("created_at")
 
+  @@index([documentId])
+  @@index([renewedById])
   @@map("document_versions")
 }
 
@@ -140,6 +157,11 @@ model AuditLog {
   diffData   Json        @map("diff_data")
   timestamp  DateTime    @default(now())
 
+  // Pagina de auditoria: ORDER BY timestamp DESC LIMIT n.
+  @@index([timestamp])
+  // Historico por documento (WHERE documentId ORDER BY timestamp DESC); cobre a FK.
+  @@index([documentId, timestamp])
+  @@index([userId])
   @@map("audit_logs")
 }
 
@@ -152,6 +174,8 @@ model GCalSyncLog {
   lastSyncedAt DateTime   @default(now()) @map("last_synced_at")
   errorMessage String?    @map("error_message")
 
+  // findCurrentGcalEventId: WHERE documentId ORDER BY lastSyncedAt DESC LIMIT 1; cobre a FK.
+  @@index([documentId, lastSyncedAt])
   @@map("gcal_sync_logs")
 }
 
