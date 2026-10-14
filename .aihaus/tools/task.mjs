@@ -1,0 +1,337 @@
+#!/usr/bin/env node
+
+import { spawnSync } from "node:child_process";
+import { randomBytes } from "node:crypto";
+import { access, chmod, mkdir, readdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { assertPathWithin } from "./path-safety.mjs";
+import { validateEvidenceDocument } from "./evidence-validate.mjs";
+
+export const statuses = ["backlog", "todo", "doing", "review", "done"];
+
+async function exists(target) {
+  try {
+    await access(target);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function gitRoot() {
+  const result = spawnSync("git", ["rev-parse", "--show-toplevel"], { encoding: "utf8" });
+  if (result.error) throw result.error;
+  if (result.status !== 0) throw new Error("run task.mjs inside a git repository");
+  return result.stdout.trim();
+}
+
+function slug(value) {
+  const normalized = value
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 48);
+  return normalized || "task";
+}
+
+function dateStamp(now = new Date()) {
+  return now.toISOString().slice(2, 10).replaceAll("-", "");
+}
+
+async function taskBoard() {
+  const repo = await realpath(gitRoot());
+  const board = path.join(repo, ".aihaus", "memory", "kanban");
+  if (!(await exists(board))) throw new Error("aihaus file kanban is not installed");
+  await assertPathWithin({ root: repo, candidate: board });
+  return { repo, board };
+}
+
+async function roomExists(repo, room) {
+  return exists(path.join(repo, ".aihaus", "rooms", room, "CONTEXT.md"));
+}
+
+async function createTask({ title, room, externalId }) {
+  const { repo, board } = await taskBoard();
+  if (!title) throw new Error("create requires --title");
+  const normalizedTitle = oneLine(title, "--title");
+  if (!room || !(await roomExists(repo, room))) throw new Error(`unknown room: ${room || "(missing)"}`);
+  const normalizedExternalId = externalId == null ? null : oneLine(externalId, "--external-id");
+  if (normalizedExternalId) {
+    const duplicate = (await tasks()).find(
+      (task) => task.external_id?.toLowerCase() === normalizedExternalId.toLowerCase(),
+    );
+    if (duplicate) {
+      throw new Error(
+        `external task already exists: ${normalizedExternalId} (${duplicate.id}, ${duplicate.status})`,
+      );
+    }
+  }
+  const id = `T-${dateStamp()}-${randomBytes(3).toString("hex")}-${slug(normalizedTitle)}`;
+  const destination = path.join(board, "backlog", `${id}.md`);
+  await assertPathWithin({ root: board, candidate: destination });
+  await mkdir(path.dirname(destination), { recursive: true });
+  const created = new Date().toISOString();
+  const externalIdField = normalizedExternalId
+    ? `external_id: ${JSON.stringify(normalizedExternalId)}\n`
+    : "";
+  const body = `---\nid: ${id}\nroom: ${room}\n${externalIdField}created: ${created}\n---\n\n# Goal\n\n${normalizedTitle}\n\n## Acceptance\n\n- [ ] Define executable acceptance evidence.\n\n## Context\n\n## Owned files\n\n## Business-rule gaps\n\n## Log\n\n## Evidence\n`;
+  await writeFile(destination, body, { encoding: "utf8", flag: "wx" });
+  return {
+    ok: true,
+    id,
+    ...(normalizedExternalId ? { external_id: normalizedExternalId } : {}),
+    status: "backlog",
+    file: path.relative(repo, destination),
+  };
+}
+
+function frontmatter(content) {
+  return content.match(/^\uFEFF?---\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/)?.[1] ?? "";
+}
+
+function frontmatterField(front, field) {
+  return front.match(new RegExp(`^${field}:[ \\t]*(.+)$`, "m"))?.[1]?.trim() || null;
+}
+
+function frontmatterString(front, field) {
+  const raw = frontmatterField(front, field);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    return typeof parsed === "string" ? parsed : raw;
+  } catch {
+    return raw;
+  }
+}
+
+async function tasks() {
+  const { repo, board } = await taskBoard();
+  const result = [];
+  for (const status of statuses) {
+    const directory = path.join(board, status);
+    const files = await readdir(directory).catch((error) => {
+      if (error.code === "ENOENT") return [];
+      throw error;
+    });
+    for (const file of files) {
+      if (!file.endsWith(".md")) continue;
+      const full = path.join(directory, file);
+      const content = await readFile(full, "utf8");
+      const front = frontmatter(content);
+      const id = frontmatterField(front, "id") || path.basename(file, ".md");
+      const room = frontmatterField(front, "room");
+      const externalId = frontmatterString(front, "external_id");
+      const title = content.match(/^# Goal\s*\r?\n\s*\r?\n([^\r\n]+)/m)?.[1]?.trim() || id;
+      result.push({
+        id,
+        title,
+        room,
+        ...(externalId ? { external_id: externalId } : {}),
+        status,
+        file: path.relative(repo, full),
+      });
+    }
+  }
+  return result.sort((left, right) => left.id.localeCompare(right.id));
+}
+
+async function locateTask(id) {
+  if (!id) throw new Error("task ID is required");
+  const { repo, board } = await taskBoard();
+  const matches = (await tasks()).filter((task) => task.id === id || path.basename(task.file, ".md") === id);
+  if (matches.length !== 1) throw new Error(`expected exactly one task for ${id}; found ${matches.length}`);
+  const file = path.join(repo, matches[0].file);
+  await assertPathWithin({ root: board, candidate: file });
+  return { repo, board, file, task: matches[0] };
+}
+
+async function moveTask(id, status) {
+  if (!id) throw new Error("move requires a task ID");
+  if (!statuses.includes(status)) throw new Error(`invalid status: ${status}`);
+  const { repo, board, file: source, task } = await locateTask(id);
+  const destination = path.join(board, status, path.basename(source));
+  await assertPathWithin({ root: board, candidate: source });
+  await assertPathWithin({ root: board, candidate: destination });
+  if (await exists(destination)) throw new Error(`destination already exists: ${path.relative(repo, destination)}`);
+  if (statuses.indexOf(status) > statuses.indexOf(task.status)) {
+    const content = await readFile(source, "utf8");
+    validateTransition(content, status);
+    if (status === "done") await validateCompletion(content, repo);
+  }
+  await mkdir(path.dirname(destination), { recursive: true });
+  await rename(source, destination);
+  return { ok: true, id: task.id, from: task.status, status, file: path.relative(repo, destination) };
+}
+
+function section(content, heading) {
+  const marker = content.match(new RegExp(`^## ${heading}[ \\t]*\\r?$`, "m"));
+  if (!marker) return "";
+  const body = content.slice(marker.index + marker[0].length).replace(/^\s*\r?\n/, "");
+  const end = body.search(/^## /m);
+  return (end < 0 ? body : body.slice(0, end)).trim();
+}
+
+function validateTransition(content, status) {
+  const missing = [];
+  const acceptance = section(content, "Acceptance");
+  const ownedFiles = section(content, "Owned files");
+  if (!acceptance || acceptance.includes("- [ ] Define executable acceptance evidence.")) {
+    missing.push("Acceptance");
+  }
+  if (!ownedFiles) missing.push("Owned files");
+  if (status === "doing" && !section(content, "Context") && !section(content, "Log")) {
+    missing.push("Context or Log");
+  }
+  if (["review", "done"].includes(status)) {
+    if (!section(content, "Log")) missing.push("Log");
+    if (!section(content, "Evidence")) missing.push("Evidence");
+  }
+  if (missing.length) throw new Error(`task is not ready for ${status}; fill: ${missing.join(", ")}`);
+}
+
+async function validateCompletion(content, repo) {
+  const lines = section(content, "Acceptance").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const criteria = lines.map((line) => line.match(/^-\s+\[x\]\s+(.+)$/i)?.[1]?.trim());
+  if (!criteria.length || criteria.some((criterion) => !criterion) || new Set(criteria).size !== criteria.length) {
+    throw new Error("done requires unique checked Acceptance items: - [x] criterion");
+  }
+  const questions = section(content, "Business-rule gaps").split(/^### /m).slice(1);
+  for (const question of questions) {
+    const answer = question.match(/^Answer:[ \t]*(.*)$/m)?.[1]?.trim();
+    const draftRule = question.match(/^Draft rule:[ \t]*(.*)$/m)?.[1]?.trim();
+    if ([answer, draftRule].some((value) => !value || value.toLowerCase() === "pending")) {
+      throw new Error("done requires resolved Business-rule gaps with answers and draft rules");
+    }
+  }
+  const artifacts = [...section(content, "Evidence").matchAll(/^Artifact:[ \t]*(.+)$/gm)];
+  if (artifacts.length !== 1) throw new Error("done requires one Artifact: <repository-relative.json> in Evidence");
+  const artifact = artifacts[0][1].trim();
+  if (path.isAbsolute(artifact)) throw new Error("Evidence Artifact must be repository-relative");
+  const checked = await assertPathWithin({ root: repo, candidate: path.join(repo, artifact) });
+  const document = JSON.parse((await readFile(checked.candidate, "utf8")).replace(/^\uFEFF/, ""));
+  const validation = validateEvidenceDocument(document);
+  if (!validation.ok) throw new Error(`invalid completion evidence: ${validation.errors.join(", ")}`);
+  if (document.verdict !== "PASS") throw new Error("done requires evidence verdict PASS");
+  const evidenced = document.acceptance.map((item) => item.criterion.trim());
+  if (JSON.stringify(criteria.sort()) !== JSON.stringify(evidenced.sort())) {
+    throw new Error("evidence criteria must exactly match Acceptance items without missing, extra, or duplicate criteria");
+  }
+}
+
+async function replaceFile(file, content) {
+  // Rename a sibling temp file over the task so hard links to the old inode stay unchanged.
+  const { mode } = await stat(file);
+  const temporary = path.join(path.dirname(file), `.${path.basename(file)}.${randomBytes(6).toString("hex")}.tmp`);
+  try {
+    await writeFile(temporary, content, { encoding: "utf8", flag: "wx", mode: 0o600 });
+    await chmod(temporary, mode & 0o7777);
+    await rename(temporary, file);
+  } catch (error) {
+    if (error.code !== "EEXIST") await rm(temporary, { force: true });
+    throw error;
+  }
+}
+
+function oneLine(value, field) {
+  const normalized = value?.replace(/\s+/g, " ").trim();
+  if (!normalized) throw new Error(`${field} is required`);
+  return normalized;
+}
+
+async function addQuestion(id, text) {
+  const { repo, file, task } = await locateTask(id);
+  const question = oneLine(text, "--text");
+  const questionId = `Q-${randomBytes(3).toString("hex")}`;
+  let content = await readFile(file, "utf8");
+  const heading = "## Business-rule gaps";
+  const marker = /^## Business-rule gaps[ \t]*\r?$/m;
+  if (!marker.test(content)) content = `${content.trimEnd()}\n\n${heading}\n`;
+  const match = content.match(marker);
+  const start = match.index + match[0].length;
+  const nextHeading = content.indexOf("\n## ", start);
+  const insertion = `\n\n### ${questionId}\n\nQuestion: ${question}\n\nAnswer: pending\n\nDraft rule: pending\n`;
+  content = nextHeading < 0
+    ? `${content.trimEnd()}${insertion}`
+    : `${content.slice(0, nextHeading).trimEnd()}${insertion}\n${content.slice(nextHeading + 1)}`;
+  await replaceFile(file, content);
+  return { ok: true, id: task.id, question: questionId, file: path.relative(repo, file) };
+}
+
+async function answerQuestion(id, questionId, answerText, draftRuleText) {
+  const { repo, file, task } = await locateTask(id);
+  const question = oneLine(questionId, "--question");
+  const answer = oneLine(answerText, "--text");
+  const draftRule = oneLine(draftRuleText, "--draft-rule");
+  const content = await readFile(file, "utf8");
+  let start = content.indexOf(`### ${question}\n`);
+  if (start < 0) start = content.indexOf(`### ${question}\r\n`);
+  if (start < 0) throw new Error(`question not found: ${question}`);
+  const next = content.indexOf("\n### ", start + 4);
+  const end = next < 0 ? content.length : next;
+  const block = content.slice(start, end);
+  if (!/^Answer: pending\r?$/m.test(block)) throw new Error(`question already answered: ${question}`);
+  const answered = block
+    .replace(/^Answer: pending(?=\r?$)/m, () => `Answer: ${answer}`)
+    .replace(/^Draft rule: pending(?=\r?$)/m, () => `Draft rule: ${draftRule}`);
+  await replaceFile(file, `${content.slice(0, start)}${answered}${content.slice(end)}`);
+  return { ok: true, id: task.id, question, draft_rule: draftRule, promoted: false, file: path.relative(repo, file) };
+}
+
+function parseArgs(args) {
+  const command = args.shift() || "list";
+  const options = {
+    command,
+    json: false,
+    title: null,
+    room: null,
+    externalId: null,
+    text: null,
+    question: null,
+    draftRule: null,
+    positionals: [],
+  };
+  while (args.length) {
+    const arg = args.shift();
+    if (arg === "--json") options.json = true;
+    else if (arg === "--title") options.title = args.shift() ?? null;
+    else if (arg === "--room") options.room = args.shift() ?? null;
+    else if (arg === "--external-id") {
+      const value = args.shift();
+      if (!value || value.startsWith("--")) throw new Error("--external-id requires a value");
+      options.externalId = value;
+    }
+    else if (arg === "--text") options.text = args.shift() ?? null;
+    else if (arg === "--question") options.question = args.shift() ?? null;
+    else if (arg === "--draft-rule") options.draftRule = args.shift() ?? null;
+    else options.positionals.push(arg);
+  }
+  return options;
+}
+
+async function main() {
+  try {
+    const options = parseArgs(process.argv.slice(2));
+    let result;
+    if (options.command === "create") result = await createTask(options);
+    else if (options.command === "move") result = await moveTask(options.positionals[0], options.positionals[1]);
+    else if (options.command === "question") result = await addQuestion(options.positionals[0], options.text);
+    else if (options.command === "answer") {
+      result = await answerQuestion(
+        options.positionals[0],
+        options.question,
+        options.text,
+        options.draftRule,
+      );
+    }
+    else if (options.command === "list") result = { ok: true, tasks: await tasks() };
+    else throw new Error(`unknown command: ${options.command}`);
+    process.stdout.write(`${JSON.stringify(result, null, options.json ? 2 : 0)}\n`);
+  } catch (error) {
+    process.stderr.write(`${JSON.stringify({ ok: false, error: error.message })}\n`);
+    process.exitCode = 2;
+  }
+}
+
+await main();

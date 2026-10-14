@@ -419,7 +419,7 @@ O evento nunca é duplicado entre edições: `gcalService.ts` sempre reutiliza o
 mesmo `gcalEventId` já registrado em `gcal_sync_logs` para aquele documento,
 optando por `update`/`delete` sobre ele em vez de criar um novo evento a cada
 sincronização; um `insert` só ocorre quando o documento ainda não possui nenhum
-log `SYNCED` anterior. Ver ADR-009 (`.aihaus-okf/memory/project/decisions.md`)
+log `SYNCED` anterior. Ver ADR-009 (`.aihaus/memory/project/decisions.md`)
 para a decisão de modelo de conta (OAuth por usuário vs. conta de serviço
 compartilhada) e suas consequências.
 
