@@ -121,7 +121,7 @@ describe('DOC-33 - Validação de Variáveis de Ambiente (src/config/env.ts)', (
   });
 
   describe('Boot test', () => {
-    it('aborta no boot com código diferente de zero e nomeia JWT_SECRET no stderr quando NODE_ENV=production sem JWT_SECRET', () => {
+    it('aborta no boot com código 1 e nomeia JWT_SECRET no stderr sem stack trace quando NODE_ENV=production sem JWT_SECRET', () => {
       const backendDir = path.resolve(__dirname, '..');
       const result = spawnSync(
         process.execPath,
@@ -138,8 +138,10 @@ describe('DOC-33 - Validação de Variáveis de Ambiente (src/config/env.ts)', (
         }
       );
 
-      expect(result.status).not.toBe(0);
+      expect(result.status).toBe(1);
       expect(result.stderr).toContain('JWT_SECRET');
+      expect(result.stderr).not.toContain('    at ');
     });
   });
+
 });

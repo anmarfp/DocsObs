@@ -31,6 +31,12 @@ vi.mock('googleapis', () => ({
   },
 }));
 
+vi.mock('../src/config/env.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/config/env.js')>();
+  const env = { ...actual.env };
+  return { ...actual, env };
+});
+
 vi.mock('../src/lib/prisma.js', () => ({
   prisma: {
     googleOAuthToken: {
@@ -41,6 +47,7 @@ vi.mock('../src/lib/prisma.js', () => ({
   },
 }));
 
+import { env } from '../src/config/env.js';
 import { prisma } from '../src/lib/prisma.js';
 import { app } from '../src/app.js';
 import { generateToken, signOAuthState, verifyOAuthState } from '../src/utils/jwt.js';
@@ -53,7 +60,7 @@ describe('Google Calendar OAuth - fluxo de conexão (DOC-28, subtarefa 2)', () =
     userId: 'operational-1', email: 'operational@docsobs.com', name: 'Operacional', role: Role.OPERATIONAL,
   });
 
-  const ORIGINAL_ENV = { ...process.env };
+  const defaultEnv = { ...env };
 
   beforeAll(() => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
@@ -61,26 +68,25 @@ describe('Google Calendar OAuth - fluxo de conexão (DOC-28, subtarefa 2)', () =
 
   afterAll(() => {
     vi.restoreAllMocks();
-    process.env = { ...ORIGINAL_ENV };
+    Object.assign(env, defaultEnv);
   });
 
   beforeEach(() => {
     vi.clearAllMocks();
-    process.env = { ...ORIGINAL_ENV };
-    delete process.env.GOOGLE_CLIENT_ID;
-    delete process.env.GOOGLE_CLIENT_SECRET;
-    delete process.env.GOOGLE_REDIRECT_URI;
-    delete process.env.FRONTEND_URL;
+    Object.assign(env, defaultEnv);
+    (env as any).google = null;
   });
 
   afterEach(() => {
-    process.env = { ...ORIGINAL_ENV };
+    Object.assign(env, defaultEnv);
   });
 
   function configureGoogleEnv() {
-    process.env.GOOGLE_CLIENT_ID = 'test-client-id';
-    process.env.GOOGLE_CLIENT_SECRET = 'test-client-secret';
-    process.env.GOOGLE_REDIRECT_URI = 'http://localhost:3001/api/v1/calendar/google/callback';
+    (env as any).google = {
+      clientId: 'test-client-id',
+      clientSecret: 'test-client-secret',
+      redirectUri: 'http://localhost:3001/api/v1/calendar/google/callback',
+    };
   }
 
   describe('GET /calendar/google/connect', () => {

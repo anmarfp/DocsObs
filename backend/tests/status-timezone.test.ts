@@ -10,6 +10,12 @@ import { DocumentStatus, Role } from '@prisma/client';
  * TZ=Asia/Tokyo).
  */
 
+vi.mock('../src/config/env.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/config/env.js')>();
+  const env = { ...actual.env };
+  return { ...actual, env };
+});
+
 vi.mock('../src/lib/prisma.js', () => ({
   prisma: {
     document: {
@@ -26,6 +32,7 @@ vi.mock('../src/lib/prisma.js', () => ({
   },
 }));
 
+import { env } from '../src/config/env.js';
 import { prisma } from '../src/lib/prisma.js';
 import { calculateDocumentStatus, getDaysUntilExpiration } from '../src/services/statusService.js';
 import { recalculateAllStatuses } from '../src/services/cronService.js';
@@ -33,12 +40,7 @@ import { getCalendarEvents } from '../src/controllers/calendarController.js';
 import { getDashboardMetrics } from '../src/services/dashboardService.js';
 import { getBusinessToday, getCivilDateInTimeZone } from '../src/utils/date.js';
 
-const originalAppTimeZone = process.env.APP_TIMEZONE;
-
-function restoreAppTimeZone() {
-  if (originalAppTimeZone === undefined) delete process.env.APP_TIMEZONE;
-  else process.env.APP_TIMEZONE = originalAppTimeZone;
-}
+const initialAppTimeZone = env.APP_TIMEZONE;
 
 /** Verifica se uma data satisfaz o filtro Prisma `{ gte, lte }`. */
 function inRange(range: { gte: Date; lte: Date }, date: Date): boolean {
@@ -48,15 +50,16 @@ function inRange(range: { gte: Date; lte: Date }, date: Date): boolean {
 describe('DOC-27 - datas civis em UTC e "hoje" no fuso de negócio', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    process.env.APP_TIMEZONE = 'America/Sao_Paulo';
+    (env as any).APP_TIMEZONE = 'America/Sao_Paulo';
   });
 
   afterEach(() => {
     vi.useRealTimers();
+    (env as any).APP_TIMEZONE = initialAppTimeZone;
   });
 
   afterAll(() => {
-    restoreAppTimeZone();
+    (env as any).APP_TIMEZONE = initialAppTimeZone;
   });
 
   describe('calculateDocumentStatus (fronteira da meia-noite)', () => {
@@ -92,12 +95,12 @@ describe('DOC-27 - datas civis em UTC e "hoje" no fuso de negócio', () => {
       const now = new Date('2026-08-30T23:30:00.000Z');
       const expiration = new Date('2026-08-30T00:00:00.000Z');
       expect(calculateDocumentStatus(expiration, 30, false, now)).toBe(DocumentStatus.CRITICAL);
-      process.env.APP_TIMEZONE = 'Asia/Tokyo';
+      (env as any).APP_TIMEZONE = 'Asia/Tokyo';
       expect(calculateDocumentStatus(expiration, 30, false, now)).toBe(DocumentStatus.EXPIRED);
     });
 
     it('cai no padrão America/Sao_Paulo quando APP_TIMEZONE é inválido', () => {
-      process.env.APP_TIMEZONE = 'Fuso/Inexistente';
+      (env as any).APP_TIMEZONE = 'Fuso/Inexistente';
       expect(getBusinessToday(new Date('2026-08-31T01:00:00.000Z'))).toEqual(new Date('2026-08-30T00:00:00.000Z'));
     });
 

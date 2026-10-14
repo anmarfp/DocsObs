@@ -23,21 +23,7 @@ export interface Env {
   readonly google: GoogleConfig | null;
 }
 
-let processFallbackSecret: string | null = null;
 let processHasWarnedSecret = false;
-
-function getProcessFallbackSecret(): string {
-  if (!processFallbackSecret) {
-    processFallbackSecret = crypto.randomBytes(48).toString('base64url');
-  }
-  if (!processHasWarnedSecret) {
-    console.warn(
-      '⚠️ [DocsObs] JWT_SECRET não configurado. Segredo temporário gerado; tokens não sobreviverão a um reinício do processo.'
-    );
-    processHasWarnedSecret = true;
-  }
-  return processFallbackSecret;
-}
 
 const EnvSchema = z
   .object({
@@ -153,10 +139,12 @@ export function loadEnv(
 
   let jwtSecret = parsed.data.JWT_SECRET;
   if (!jwtSecret) {
-    if (source === process.env) {
-      jwtSecret = getProcessFallbackSecret();
-    } else {
-      jwtSecret = crypto.randomBytes(48).toString('base64url');
+    jwtSecret = crypto.randomBytes(48).toString('base64url');
+    if (!processHasWarnedSecret) {
+      console.warn(
+        '⚠️ [DocsObs] JWT_SECRET não configurado. Segredo temporário gerado; tokens não sobreviverão a um reinício do processo.'
+      );
+      processHasWarnedSecret = true;
     }
   }
 
@@ -185,85 +173,12 @@ export function loadEnv(
   });
 }
 
-const initialEnv = loadEnv(process.env);
+export const env: Env = (() => {
+  try {
+    return loadEnv(process.env);
+  } catch (err) {
+    console.error(err instanceof Error ? err.message : String(err));
+    process.exit(1);
+  }
+})();
 
-export const env: Env = Object.freeze(
-  Object.defineProperties({} as Env, {
-    NODE_ENV: {
-      get() {
-        return (process.env.NODE_ENV as Env['NODE_ENV']) || initialEnv.NODE_ENV;
-      },
-      enumerable: true,
-    },
-    JWT_SECRET: {
-      get() {
-        return process.env.JWT_SECRET || initialEnv.JWT_SECRET;
-      },
-      enumerable: true,
-    },
-    JWT_EXPIRES_IN: {
-      get() {
-        return process.env.JWT_EXPIRES_IN || initialEnv.JWT_EXPIRES_IN;
-      },
-      enumerable: true,
-    },
-    DATABASE_URL: {
-      get() {
-        return process.env.DATABASE_URL || initialEnv.DATABASE_URL;
-      },
-      enumerable: true,
-    },
-    PORT: {
-      get() {
-        if (process.env.PORT) {
-          const num = Number(process.env.PORT);
-          return Number.isNaN(num) ? initialEnv.PORT : num;
-        }
-        return initialEnv.PORT;
-      },
-      enumerable: true,
-    },
-    FRONTEND_URL: {
-      get() {
-        return process.env.FRONTEND_URL || initialEnv.FRONTEND_URL;
-      },
-      enumerable: true,
-    },
-    UPLOAD_DIR: {
-      get() {
-        return process.env.UPLOAD_DIR || initialEnv.UPLOAD_DIR;
-      },
-      enumerable: true,
-    },
-    MAX_FILE_SIZE_BYTES: {
-      get() {
-        if (process.env.MAX_FILE_SIZE_BYTES) {
-          const num = Number(process.env.MAX_FILE_SIZE_BYTES);
-          return Number.isNaN(num) ? initialEnv.MAX_FILE_SIZE_BYTES : num;
-        }
-        return initialEnv.MAX_FILE_SIZE_BYTES;
-      },
-      enumerable: true,
-    },
-    APP_TIMEZONE: {
-      get() {
-        return process.env.APP_TIMEZONE !== undefined
-          ? process.env.APP_TIMEZONE
-          : initialEnv.APP_TIMEZONE;
-      },
-      enumerable: true,
-    },
-    google: {
-      get() {
-        const id = process.env.GOOGLE_CLIENT_ID?.trim();
-        const secret = process.env.GOOGLE_CLIENT_SECRET?.trim();
-        const uri = process.env.GOOGLE_REDIRECT_URI?.trim();
-        if (id && secret && uri) {
-          return { clientId: id, clientSecret: secret, redirectUri: uri };
-        }
-        return null;
-      },
-      enumerable: true,
-    },
-  })
-);
