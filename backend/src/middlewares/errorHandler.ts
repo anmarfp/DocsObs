@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { ZodError } from 'zod';
 import multer from 'multer';
+import { env } from '../config/env.js';
 
 export function errorHandler(
   err: any,
@@ -44,7 +45,7 @@ export function errorHandler(
     return;
   }
 
-  if (process.env.NODE_ENV !== 'test') {
+  if (env.NODE_ENV !== 'test') {
     console.error('⚠️ [Erro Não Tratado]:', err);
   }
 

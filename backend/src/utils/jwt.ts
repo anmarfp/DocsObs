@@ -1,18 +1,16 @@
 import jwt, { SignOptions } from 'jsonwebtoken';
 import { TokenPayload } from '../types/index.js';
-
-const JWT_SECRET = process.env.JWT_SECRET || 'docsobs-fallback-secret-key-for-dev';
-const JWT_EXPIRES_IN = (process.env.JWT_EXPIRES_IN || '7d') as SignOptions['expiresIn'];
+import { env } from '../config/env.js';
 
 export function generateToken(payload: TokenPayload): string {
   const options: SignOptions = {
-    expiresIn: JWT_EXPIRES_IN,
+    expiresIn: env.JWT_EXPIRES_IN as SignOptions['expiresIn'],
   };
-  return jwt.sign(payload, JWT_SECRET, options);
+  return jwt.sign(payload, env.JWT_SECRET, options);
 }
 
 export function verifyToken(token: string): TokenPayload {
-  return jwt.verify(token, JWT_SECRET) as TokenPayload;
+  return jwt.verify(token, env.JWT_SECRET) as TokenPayload;
 }
 
 const OAUTH_STATE_PURPOSE = 'google-oauth-state';
@@ -26,11 +24,11 @@ const OAUTH_STATE_PURPOSE = 'google-oauth-state';
  * contrário de um token de login completo, que ficaria válido por dias.
  */
 export function signOAuthState(userId: string): string {
-  return jwt.sign({ userId, purpose: OAUTH_STATE_PURPOSE }, JWT_SECRET, { expiresIn: '10m' });
+  return jwt.sign({ userId, purpose: OAUTH_STATE_PURPOSE }, env.JWT_SECRET, { expiresIn: '10m' });
 }
 
 export function verifyOAuthState(token: string): string {
-  const decoded = jwt.verify(token, JWT_SECRET) as { userId?: string; purpose?: string };
+  const decoded = jwt.verify(token, env.JWT_SECRET) as { userId?: string; purpose?: string };
   if (decoded.purpose !== OAUTH_STATE_PURPOSE || !decoded.userId) {
     throw new Error('Token de estado OAuth inválido.');
   }
