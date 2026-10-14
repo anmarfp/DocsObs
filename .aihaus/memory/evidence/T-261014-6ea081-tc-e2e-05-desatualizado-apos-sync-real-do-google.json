@@ -1,0 +1,33 @@
+{
+  "schema": "aihaus.evidence.v1",
+  "verdict": "PASS",
+  "commit": "0cb222a",
+  "acceptance": [
+    {
+      "criterion": "TC-E2E-05 valida o comportamento real: sync processa o documento (total >= 1) e registra log ERROR \"Usuário não conectou o Google Agenda.\" sem conta conectada",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npm run test:e2e (checkout limpo 0cb222a) - tests/e2e/05-calendar-events.test.ts",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "criterion": "Suite E2E completa verde",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npm run test:e2e (8 arquivos, 19/19)",
+          "exit_code": 0
+        }
+      ]
+    }
+  ]
+}
