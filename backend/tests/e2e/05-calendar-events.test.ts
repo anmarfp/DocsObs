@@ -7,10 +7,10 @@ import {
   uniqueValue,
 } from './helpers/auth.helper.js';
 
-describe('TC-E2E-05: Calendario e sincronizacao Google simulada (RF-005)', () => {
+describe('TC-E2E-05: Calendario e sincronizacao Google (OAuth por usuario) (RF-005)', () => {
   const req = getRequest();
 
-  it('lista o evento criado no mes/ano e registra sua sincronizacao simulada', async () => {
+  it('lista o evento criado no mes/ano e registra ERROR de sincronizacao sem conta Google conectada', async () => {
     const { adminToken, operationalToken } = await getAuthTokens();
     const categoryId = await getCategoryId(adminToken);
     const targetYear = new Date().getUTCFullYear() + 2;
@@ -41,13 +41,22 @@ describe('TC-E2E-05: Calendario e sincronizacao Google simulada (RF-005)', () =>
       .post(getApiPath('/api/v1/calendar/sync'))
       .set('Authorization', `Bearer ${operationalToken}`);
     expect(sync.status).toBe(200);
-    expect(sync.body.synced).toBeGreaterThanOrEqual(1);
+    expect(sync.body.total).toBeGreaterThanOrEqual(1);
+    expect(typeof sync.body.synced).toBe('number');
 
     const logs = await req
       .get(getApiPath('/api/v1/calendar/sync-logs?page=1&limit=100'))
       .set('Authorization', `Bearer ${adminToken}`);
     expect(logs.status).toBe(200);
-    expect(logs.body.logs.some((log: any) => log.documentId === documentId)).toBe(true);
+    const documentLogs = logs.body.logs.filter((log: any) => log.documentId === documentId);
+    expect(documentLogs.length).toBeGreaterThanOrEqual(1);
+    expect(
+      documentLogs.some(
+        (log: any) =>
+          log.status === 'ERROR' &&
+          log.errorMessage === 'Usuário não conectou o Google Agenda.'
+      )
+    ).toBe(true);
   });
 
   it('bloqueia logs de sincronizacao para Operacional', async () => {
