@@ -1,8 +1,8 @@
+import { randomBytes } from 'node:crypto';
 import { PrismaClient, Role, NotificationMode, DocumentStatus } from '@prisma/client';
 import bcrypt from 'bcryptjs';
+import dotenv from 'dotenv';
 import { calculateDocumentStatus } from '../src/services/statusService.js';
-
-const prisma = new PrismaClient();
 
 const SEED_MARKER = 'Gerado pelo seed automatizado de demonstração.';
 
@@ -22,13 +22,107 @@ function shuffle<T>(items: T[]): T[] {
   return copy;
 }
 
+// ---------- Resolução de senhas do seed (DOC-32) ----------
+// Nenhuma senha é versionada neste arquivo. Em produção as senhas dos usuários
+// fixos são obrigatórias; fora de produção, a ausência gera uma senha aleatória
+// por usuário, exibida uma única vez no console.
+
+export const MIN_PRODUCTION_SEED_PASSWORD_LENGTH = 12;
+export const REQUIRED_PRODUCTION_SEED_VARS = ['ADMIN_SEED_PASSWORD', 'OPERATIONAL_SEED_PASSWORD'] as const;
+
+export type SeedEnv = Record<string, string | undefined>;
+
+export interface ResolvedSeedPassword {
+  password: string;
+  generated: boolean;
+}
+
+export class SeedConfigError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'SeedConfigError';
+  }
+}
+
+export function isProductionSeed(env: SeedEnv): boolean {
+  return env.NODE_ENV === 'production';
+}
+
+function readPassword(env: SeedEnv, name: string): string | undefined {
+  const value = env[name];
+  return value && value.trim() !== '' ? value : undefined;
+}
+
+export function generateSeedPassword(): string {
+  return randomBytes(18).toString('base64url');
+}
+
+/**
+ * Valida a configuração do seed. Retorna a lista de problemas (vazia quando a
+ * configuração é válida). Fora de produção nenhuma senha é obrigatória.
+ */
+export function validateSeedEnv(env: SeedEnv): string[] {
+  if (!isProductionSeed(env)) return [];
+  const problems: string[] = [];
+  for (const name of REQUIRED_PRODUCTION_SEED_VARS) {
+    const value = readPassword(env, name);
+    if (!value) {
+      problems.push(`${name} não definida`);
+    } else if (value.length < MIN_PRODUCTION_SEED_PASSWORD_LENGTH) {
+      problems.push(`${name} deve ter ao menos ${MIN_PRODUCTION_SEED_PASSWORD_LENGTH} caracteres`);
+    }
+  }
+  return problems;
+}
+
+export function assertSeedEnv(env: SeedEnv): void {
+  const problems = validateSeedEnv(env);
+  if (problems.length > 0) {
+    throw new SeedConfigError(
+      `Seed abortado em NODE_ENV=production: ${problems.join('; ')}. ` +
+        `Defina ${REQUIRED_PRODUCTION_SEED_VARS.join(' e ')} (mínimo de ${MIN_PRODUCTION_SEED_PASSWORD_LENGTH} caracteres) ` +
+        'ou desabilite o seed com RUN_SEED=false.'
+    );
+  }
+}
+
+/**
+ * Resolve a senha de um usuário do seed: usa a variável de ambiente quando
+ * definida; fora de produção gera uma senha aleatória; em produção falha.
+ */
+export function resolveSeedPassword(
+  env: SeedEnv,
+  name: string,
+  generate: () => string = generateSeedPassword
+): ResolvedSeedPassword {
+  const value = readPassword(env, name);
+  if (value) return { password: value, generated: false };
+  if (isProductionSeed(env)) {
+    throw new SeedConfigError(`Seed abortado em NODE_ENV=production: ${name} não definida.`);
+  }
+  return { password: generate(), generated: true };
+}
+
+/** Usuários e documentos de demonstração nunca são criados em produção. */
+export function shouldSeedDemoData(env: SeedEnv): boolean {
+  return !isProductionSeed(env);
+}
+
+function logPassword(email: string, resolved: ResolvedSeedPassword, envName: string): void {
+  if (resolved.generated) {
+    console.log(`   🔑 Senha gerada para ${email} (exibida apenas agora; defina ${envName} para fixá-la): ${resolved.password}`);
+  } else {
+    console.log(`   🔑 Senha de ${email} definida por ${envName}.`);
+  }
+}
+
 function daysFromNow(days: number): Date {
   const date = new Date();
   date.setDate(date.getDate() + days);
   return date;
 }
 
-async function main() {
+async function main(prisma: PrismaClient, env: SeedEnv) {
   console.log('🌱 Iniciando o seed do banco de dados DocsObs...');
 
   // 1. Configuração Padrão da Empresa (Single-Tenant no MVP)
@@ -49,8 +143,8 @@ async function main() {
   });
 
   if (!adminUser) {
-    const adminPassword = process.env.ADMIN_SEED_PASSWORD || 'Admin123!@#';
-    const adminPasswordHash = await bcrypt.hash(adminPassword, 10);
+    const adminPassword = resolveSeedPassword(env, 'ADMIN_SEED_PASSWORD');
+    const adminPasswordHash = await bcrypt.hash(adminPassword.password, 10);
     adminUser = await prisma.user.create({
       data: {
         name: 'Administrador do Sistema',
@@ -61,6 +155,9 @@ async function main() {
       },
     });
     console.log(`✅ Usuário Administrador criado: ${adminEmail}`);
+    logPassword(adminEmail, adminPassword, 'ADMIN_SEED_PASSWORD');
+  } else {
+    console.log(`ℹ️ Usuário Administrador já existe (${adminEmail}) — senha preservada.`);
   }
 
   // 3. Usuário Operacional de Demonstração
@@ -70,8 +167,8 @@ async function main() {
   });
 
   if (!existingOp) {
-    const opPassword = process.env.OPERATIONAL_SEED_PASSWORD || 'Operacional123!@#';
-    const opPasswordHash = await bcrypt.hash(opPassword, 10);
+    const opPassword = resolveSeedPassword(env, 'OPERATIONAL_SEED_PASSWORD');
+    const opPasswordHash = await bcrypt.hash(opPassword.password, 10);
     await prisma.user.create({
       data: {
         name: 'Analista Operacional',
@@ -82,6 +179,9 @@ async function main() {
       },
     });
     console.log(`✅ Usuário Operacional criado: ${opEmail}`);
+    logPassword(opEmail, opPassword, 'OPERATIONAL_SEED_PASSWORD');
+  } else {
+    console.log(`ℹ️ Usuário Operacional já existe (${opEmail}) — senha preservada.`);
   }
 
   // 4. Categorias Padrão de Documentos
@@ -107,7 +207,13 @@ async function main() {
   }
   console.log(`✅ ${defaultCategories.length} categorias padrão sincronizadas.`);
 
-  // 5. Usuários Aleatórios de Demonstração
+  // 5. Usuários Aleatórios de Demonstração (somente fora de produção)
+  if (!shouldSeedDemoData(env)) {
+    console.log('ℹ️ NODE_ENV=production — usuários e documentos de demonstração não são criados.');
+    console.log('✨ Seed finalizado com sucesso!');
+    return;
+  }
+
   const existingSeedDoc = await prisma.document.findFirst({ where: { notes: SEED_MARKER } });
 
   if (!existingSeedDoc) {
@@ -125,16 +231,22 @@ async function main() {
       const email = `${emailLocal}@docsobs.com.br`;
       // No máximo 1 dos 5 é ADMIN, mantendo o perfil Operacional como maioria (RN-009).
       const role = i === 0 ? Role.ADMIN : Role.OPERATIONAL;
-      const demoPassword = process.env.DEMO_SEED_PASSWORD || 'Seed123!@#';
-      const passwordHash = await bcrypt.hash(demoPassword, 10);
+      const existingDemoUser = await prisma.user.findUnique({ where: { email } });
+      if (existingDemoUser) {
+        randomUsers.push(existingDemoUser);
+        console.log(`ℹ️ Usuário aleatório já existe: ${email} — senha preservada.`);
+        continue;
+      }
 
-      const user = await prisma.user.upsert({
-        where: { email },
-        update: {},
-        create: { name, email, passwordHash, role, isActive: true },
+      // DEMO_SEED_PASSWORD (se definida) vale para todos; senão, senha aleatória por usuário.
+      const demoPassword = resolveSeedPassword(env, 'DEMO_SEED_PASSWORD');
+      const passwordHash = await bcrypt.hash(demoPassword.password, 10);
+      const user = await prisma.user.create({
+        data: { name, email, passwordHash, role, isActive: true },
       });
       randomUsers.push(user);
       console.log(`✅ Usuário aleatório criado: ${email} (${role})`);
+      logPassword(email, demoPassword, 'DEMO_SEED_PASSWORD');
     }
 
     // 6. Documentos de Demonstração com Status Variados (RN-001)
@@ -198,11 +310,30 @@ async function main() {
   console.log('✨ Seed finalizado com sucesso!');
 }
 
-main()
-  .catch((e) => {
-    console.error('❌ Erro durante o seed do banco de dados:', e);
+async function run(): Promise<void> {
+  dotenv.config();
+  const env: SeedEnv = process.env;
+
+  try {
+    // Falha antes de tocar no banco quando a configuração de produção está incompleta.
+    assertSeedEnv(env);
+  } catch (e) {
+    console.error(`❌ ${e instanceof Error ? e.message : String(e)}`);
     process.exit(1);
-  })
-  .finally(async () => {
+  }
+
+  const prisma = new PrismaClient();
+  try {
+    await main(prisma, env);
+  } catch (e) {
+    console.error('❌ Erro durante o seed do banco de dados:', e);
+    process.exitCode = 1;
+  } finally {
     await prisma.$disconnect();
-  });
+  }
+}
+
+// Executa apenas quando invocado diretamente (tsx/node), não quando importado pelos testes.
+if (typeof require !== 'undefined' && typeof module !== 'undefined' && require.main === module) {
+  void run();
+}

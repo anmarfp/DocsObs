@@ -143,8 +143,8 @@ O sistema **DocsObs** é uma plataforma web moderna, responsiva e Local-First, f
 
 | Perfil | E-mail de Acesso | Senha Padrão | Escopo de Acesso |
 | :--- | :--- | :--- | :--- |
-| **Administrador** | `admin@docsobs.com.br` | `Admin123!@#` | Acesso Irrestrito (Gestão, Auditoria, Configurações, Documentos, Relatórios) |
-| **Operacional** | `operacional@docsobs.com.br` | `Operacional123!@#` | Acesso Operacional (Documentos, Renovações, Calendário, Dashboard) |
+| **Administrador** | `admin@docsobs.com.br` | definida por `ADMIN_SEED_PASSWORD` (ver README, seção Usuários Iniciais) | Acesso Irrestrito (Gestão, Auditoria, Configurações, Documentos, Relatórios) |
+| **Operacional** | `operacional@docsobs.com.br` | definida por `OPERATIONAL_SEED_PASSWORD` | Acesso Operacional (Documentos, Renovações, Calendário, Dashboard) |
 
 ---
 

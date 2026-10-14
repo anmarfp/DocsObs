@@ -10,7 +10,7 @@
 - [Stack Tecnológica](#-stack-tecnológica)
 - [Início Rápido com Docker (Recomendado)](#-início-rápido-com-docker-recomendado)
 - [Início Rápido Local (Desenvolvimento)](#-início-rápido-local-desenvolvimento)
-- [Credenciais de Demonstração (Seed Local)](#-credenciais-de-demonstração-seed-local)
+- [Usuários Iniciais (Seed)](#-usuários-iniciais-seed)
 - [Comandos e Scripts Disponíveis](#-comandos-e-scripts-disponíveis)
 - [Matriz de Rotas e Endpoints da API](#-matriz-de-rotas-e-endpoints-da-api)
 - [Testes Automatizados e E2E](#-testes-automatizados-e-e2e)
@@ -70,7 +70,7 @@ flowchart TD
 
 ## 🐳 Início Rápido com Docker (Recomendado)
 
-O provisionamento completo com banco de dados PostgreSQL, backend com migrações automáticas e seed, e frontend servido por Nginx pode ser realizado em um único comando:
+O provisionamento completo com banco de dados PostgreSQL, backend com migrações automáticas e frontend servido por Nginx pode ser realizado em um único comando (o seed é opcional e fica desabilitado por padrão — veja [Usuários Iniciais (Seed)](#-usuários-iniciais-seed)):
 
 ### 1. Clonar o repositório e subir os serviços:
 
@@ -138,16 +138,35 @@ npm run dev:all
 
 ---
 
-## 🔑 Credenciais de Demonstração (Seed Local)
+## 🔑 Usuários Iniciais (Seed)
 
-O seed inicial cria automaticamente dois perfis de usuário para testes:
+O seed cria dois perfis fixos de usuário:
 
-| Perfil | E-mail de Acesso | Senha Padrão | Permissões (RBAC) |
+| Perfil | E-mail de Acesso | Senha | Permissões (RBAC) |
 | :--- | :--- | :--- | :--- |
-| **Administrador** | `admin@docsobs.com.br` | `Admin123!@#` | Acesso total: Painel, Documentos, Calendário, Auditoria, Gestão de Usuários e Configurações |
-| **Operacional** | `operacional@docsobs.com.br` | `Operacional123!@#` | Operações diárias: Painel, Cadastro de Documentos, Renovação e Calendário |
+| **Administrador** | `admin@docsobs.com.br` | `ADMIN_SEED_PASSWORD` | Acesso total: Painel, Documentos, Calendário, Auditoria, Gestão de Usuários e Configurações |
+| **Operacional** | `operacional@docsobs.com.br` | `OPERATIONAL_SEED_PASSWORD` | Operações diárias: Painel, Cadastro de Documentos, Renovação e Calendário |
 
-> ⚠️ **Aviso de Segurança:** As senhas acima destinam-se exclusivamente ao ambiente local e de demonstração. Em ambientes de produção, defina senhas fortes e altere a chave `JWT_SECRET`.
+Não existem senhas padrão. O comportamento do seed depende do ambiente:
+
+| Variável | Padrão | Descrição |
+| :--- | :--- | :--- |
+| `RUN_SEED` | `false` | Quando `true`, o container do backend executa o seed após as migrações. Com o padrão, `docker compose up` não cria nenhum usuário. |
+| `ADMIN_SEED_PASSWORD` | — | Senha do Administrador. **Obrigatória em produção** (mín. 12 caracteres). |
+| `OPERATIONAL_SEED_PASSWORD` | — | Senha do Operacional. **Obrigatória em produção** (mín. 12 caracteres). |
+| `DEMO_SEED_PASSWORD` | — | Senha comum dos usuários de demonstração (somente fora de produção). |
+
+- **Produção (`NODE_ENV=production`, como no `docker-compose.yml`):** sem `ADMIN_SEED_PASSWORD` e `OPERATIONAL_SEED_PASSWORD` válidas o seed termina com erro e o container não sobe. Usuários e documentos de demonstração **não** são criados.
+- **Desenvolvimento (`npm run db:seed`):** variáveis vazias fazem o seed gerar uma senha aleatória por usuário, exibida **uma única vez** no console. Também são criados usuários e documentos de demonstração.
+- O seed é idempotente: usuários já existentes não são recriados e suas senhas não são alteradas.
+
+Exemplo para semear o primeiro acesso via Docker:
+
+```bash
+RUN_SEED=true ADMIN_SEED_PASSWORD='<senha-forte>' OPERATIONAL_SEED_PASSWORD='<senha-forte>' docker compose up -d --build
+```
+
+> ⚠️ **Aviso de Segurança:** Após o primeiro acesso, volte a usar `RUN_SEED=false` e troque as senhas pela aplicação. Em ambientes de produção altere também a chave `JWT_SECRET`.
 
 ---
 
@@ -230,8 +249,9 @@ O projeto possui cobertura de testes automatizados com Vitest:
 # Executar todos os testes unitários do backend e checagem de tipos do frontend:
 npm run test:unit
 
-# Executar a suíte de testes de integração E2E:
-npm run test:e2e
+# Executar a suíte de testes de integração E2E (a stack isolada roda o seed em
+# produção; o runner gera as senhas automaticamente quando não definidas):
+ADMIN_SEED_PASSWORD='<senha-forte>' OPERATIONAL_SEED_PASSWORD='<senha-forte>' npm run test:e2e
 ```
 
 ---

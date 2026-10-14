@@ -49,12 +49,22 @@ export interface AuthTokens {
 
 let authTokensPromise: Promise<AuthTokens> | undefined;
 
+// As senhas do seed nao sao versionadas (DOC-32): a suite usa as mesmas
+// variaveis repassadas ao backend pelo docker compose.
+function requireSeedPassword(name: 'ADMIN_SEED_PASSWORD' | 'OPERATIONAL_SEED_PASSWORD'): string {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(`${name} e obrigatoria para a suite E2E (mesmo valor usado no seed do backend).`);
+  }
+  return value;
+}
+
 export async function getAuthTokens(): Promise<AuthTokens> {
   authTokensPromise ??= (async () => {
     const req = getRequest();
     const adminRes = await req
       .post(getApiPath('/api/v1/auth/login'))
-      .send({ email: 'admin@docsobs.com.br', password: 'Admin123!@#' });
+      .send({ email: 'admin@docsobs.com.br', password: requireSeedPassword('ADMIN_SEED_PASSWORD') });
 
     if (adminRes.status !== 200 || !adminRes.body?.token) {
       throw new Error(`Falha no login Admin do seed: ${adminRes.status} ${JSON.stringify(adminRes.body)}`);
@@ -62,7 +72,7 @@ export async function getAuthTokens(): Promise<AuthTokens> {
 
     const operationalRes = await req
       .post(getApiPath('/api/v1/auth/login'))
-      .send({ email: 'operacional@docsobs.com.br', password: 'Operacional123!@#' });
+      .send({ email: 'operacional@docsobs.com.br', password: requireSeedPassword('OPERATIONAL_SEED_PASSWORD') });
 
     if (operationalRes.status !== 200 || !operationalRes.body?.token) {
       throw new Error(

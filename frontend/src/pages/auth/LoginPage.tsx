@@ -57,14 +57,13 @@ export const LoginPage: React.FC = () => {
     }
   };
 
-  const fillDemoCredentials = (role: 'admin' | 'operational') => {
-    if (role === 'admin') {
-      setEmail('admin@docsobs.com.br');
-      setPassword('Admin123!@#');
-    } else {
-      setEmail('operacional@docsobs.com.br');
-      setPassword('Operacional123!@#');
-    }
+  // Somente em desenvolvimento: preenche apenas o e-mail do usuário do seed.
+  // As senhas não são versionadas (DOC-32) — use a exibida pelo seed ou a das
+  // variáveis *_SEED_PASSWORD.
+  const fillDemoEmail = (role: 'admin' | 'operational') => {
+    setEmail(role === 'admin' ? 'admin@docsobs.com.br' : 'operacional@docsobs.com.br');
+    setPassword('');
+    document.getElementById('password')?.focus();
   };
 
   return (
@@ -189,28 +188,30 @@ export const LoginPage: React.FC = () => {
             </button>
           </form>
 
-          {/* Quick Demo Fill Buttons */}
-          <div className="pt-3 border-t border-navy-800/80">
-            <p className="text-[11px] font-semibold text-navy-400 uppercase tracking-wider mb-2 text-center">
-              Preenchimento Rápido (Ambiente de Testes)
-            </p>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => fillDemoCredentials('admin')}
-                className="px-2.5 py-2 text-xs font-medium text-navy-200 bg-navy-950/60 hover:bg-navy-950 border border-navy-800 rounded-lg text-center transition"
-              >
-                👑 Administrador
-              </button>
-              <button
-                type="button"
-                onClick={() => fillDemoCredentials('operational')}
-                className="px-2.5 py-2 text-xs font-medium text-navy-200 bg-navy-950/60 hover:bg-navy-950 border border-navy-800 rounded-lg text-center transition"
-              >
-                💼 Operacional
-              </button>
+          {/* Quick Demo Fill Buttons (somente no servidor de desenvolvimento) */}
+          {import.meta.env.DEV && (
+            <div className="pt-3 border-t border-navy-800/80">
+              <p className="text-[11px] font-semibold text-navy-400 uppercase tracking-wider mb-2 text-center">
+                Preenchimento Rápido (Ambiente de Desenvolvimento)
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => fillDemoEmail('admin')}
+                  className="px-2.5 py-2 text-xs font-medium text-navy-200 bg-navy-950/60 hover:bg-navy-950 border border-navy-800 rounded-lg text-center transition"
+                >
+                  👑 Administrador
+                </button>
+                <button
+                  type="button"
+                  onClick={() => fillDemoEmail('operational')}
+                  className="px-2.5 py-2 text-xs font-medium text-navy-200 bg-navy-950/60 hover:bg-navy-950 border border-navy-800 rounded-lg text-center transition"
+                >
+                  💼 Operacional
+                </button>
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
         {/* Footer info */}
