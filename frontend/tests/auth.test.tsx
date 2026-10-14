@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as AuthModule from '@/contexts/AuthContext';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
+import LoginPage from '@/pages/auth/LoginPage';
 import { authService, TOKEN_STORAGE_KEY, USER_STORAGE_KEY } from '@/services/api';
 import type { AuthContextType, User } from '@/types/auth';
 
@@ -32,6 +33,37 @@ afterEach(() => {
   cleanup();
   localStorage.clear();
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
+});
+
+describe('LoginPage - preenchimento rapido (DOC-32)', () => {
+  function renderLogin() {
+    vi.spyOn(AuthModule, 'useAuth').mockReturnValue(
+      value({ user: null, token: null, isAuthenticated: false })
+    );
+    render(
+      <MemoryRouter initialEntries={['/login']}>
+        <LoginPage />
+      </MemoryRouter>
+    );
+  }
+
+  it('nao renderiza os botoes fora do modo de desenvolvimento', () => {
+    vi.stubEnv('DEV', false);
+    renderLogin();
+    expect(screen.queryByText(/preenchimento r[aá]pido/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /administrador/i })).not.toBeInTheDocument();
+  });
+
+  it('em desenvolvimento preenche somente o e-mail, sem senha', () => {
+    vi.stubEnv('DEV', true);
+    renderLogin();
+    screen.getByRole('button', { name: /administrador/i }).click();
+    return waitFor(() => {
+      expect(screen.getByLabelText(/e-mail corporativo/i)).toHaveValue('admin@docsobs.com.br');
+      expect(screen.getByLabelText(/senha de acesso/i)).toHaveValue('');
+    });
+  });
 });
 
 describe('AuthContext e RBAC', () => {

@@ -31,6 +31,7 @@ if [ "${RUN_SEED:-false}" = "true" ]; then
     echo "✅ [Entrypoint] Seed concluído com sucesso!"
   else
     echo "❌ [Entrypoint] Falha crítica na execução do seed. Abortando."
+    echo "   Veja a mensagem acima. Em produção o seed exige ADMIN_SEED_PASSWORD e OPERATIONAL_SEED_PASSWORD; use RUN_SEED=false para pular."
     exit 1
   fi
 else

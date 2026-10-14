@@ -44,10 +44,14 @@ services:
       JWT_EXPIRES_IN: "7d"
       UPLOAD_DIR: /app/uploads
       MAX_FILE_SIZE_BYTES: "10485760"
-      RUN_SEED: ${RUN_SEED:-true}
-      ADMIN_SEED_PASSWORD: ${ADMIN_SEED_PASSWORD:-}
-      OPERATIONAL_SEED_PASSWORD: ${OPERATIONAL_SEED_PASSWORD:-}
-      DEMO_SEED_PASSWORD: ${DEMO_SEED_PASSWORD:-}
+      # Seed desabilitado por padrão (DOC-32). Com RUN_SEED=true em produção,
+      # ADMIN_SEED_PASSWORD e OPERATIONAL_SEED_PASSWORD (mín. 12 caracteres) são
+      # obrigatórias; sem elas o seed falha e o container não sobe.
+      RUN_SEED: ${RUN_SEED:-false}
+      # Sem valor: repassadas do shell/.env apenas quando definidas.
+      ADMIN_SEED_PASSWORD:
+      OPERATIONAL_SEED_PASSWORD:
+      DEMO_SEED_PASSWORD:
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-}
