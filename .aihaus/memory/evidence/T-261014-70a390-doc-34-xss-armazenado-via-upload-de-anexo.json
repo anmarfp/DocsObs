@@ -1,0 +1,97 @@
+{
+  "schema": "aihaus.evidence.v1",
+  "verdict": "PASS",
+  "commit": "f37cf6b",
+  "acceptance": [
+    {
+      "criterion": "Upload de um .html renomeado como PDF (magic bytes nao conferem) e rejeitado no servidor",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npx vitest run tests/upload-security.test.ts (checkout limpo f37cf6b)",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "criterion": "Upload de um PDF legitimo com nome documento.exe e gravado com extensao .pdf",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npx vitest run tests/upload-security.test.ts",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "criterion": "A resposta de download/anexo traz Content-Disposition: attachment e X-Content-Type-Options: nosniff",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npx vitest run tests/upload-security.test.ts (headers de /api/v1/uploads)",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "criterion": "helmet aplicado na pilha global sem quebrar o proxy/SPA",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npx vitest run (backend 217/217, inclui CSP/health/CORS)",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "criterion": "multer migrado para ^2",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npm ci && npm run build (multer ^2.4.0)",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "criterion": "Testes cobrindo os casos acima",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "backend npx vitest run && frontend npx vitest run",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "criterion": "ARCHITECTURE.md descreve a validacao real",
+      "status": "satisfied",
+      "executable": false,
+      "evidence": [
+        {
+          "rung": "written",
+          "artifact": "docs/ARCHITECTURE.md",
+          "detail": "Secao 6.1.1 revisada pelo orquestrador contra storageService.ts/app.ts"
+        }
+      ]
+    }
+  ]
+}
