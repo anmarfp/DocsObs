@@ -72,11 +72,16 @@ flowchart TD
 
 O provisionamento completo com banco de dados PostgreSQL, backend com migrações automáticas e frontend servido por Nginx pode ser realizado em um único comando (o seed é opcional e fica desabilitado por padrão — veja [Usuários Iniciais (Seed)](#-usuários-iniciais-seed)):
 
+> ⚠️ **Importante:** A variável de ambiente `JWT_SECRET` (mínimo de 32 caracteres) é obrigatória para `docker compose up`. Configure-a no arquivo `.env` (copiando `.env.example`) antes de iniciar os serviços.
+
 ### 1. Clonar o repositório e subir os serviços:
 
 ```bash
 git clone <url-do-repositorio>
 cd implementer-antigravity
+
+# Copie as variáveis e defina JWT_SECRET (mínimo de 32 caracteres)
+cp .env.example .env
 
 # Constrói as imagens e inicia os containers em segundo plano
 docker compose up -d --build

@@ -1,11 +1,9 @@
-import dotenv from 'dotenv';
-dotenv.config();
-
+import { env } from './config/env.js';
 import { app } from './app.js';
 
-const PORT = process.env.PORT || 3001;
+const PORT = env.PORT;
 
 app.listen(PORT, () => {
-  console.log(`🚀 Servidor DocsObs rodando na porta ${PORT} [${process.env.NODE_ENV || 'development'}]`);
+  console.log(`🚀 Servidor DocsObs rodando na porta ${PORT} [${env.NODE_ENV}]`);
   console.log(`📡 Health check: http://localhost:${PORT}/api/v1/health`);
 });

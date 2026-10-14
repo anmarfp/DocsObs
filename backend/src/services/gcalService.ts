@@ -1,6 +1,7 @@
 import { SyncStatus } from '@prisma/client';
 import { google } from 'googleapis';
 import { prisma } from '../lib/prisma.js';
+import { env } from '../config/env.js';
 
 /**
  * Sincronização real com o Google Agenda (ADR-009 / DOC-28, subtarefa 3).
@@ -38,9 +39,9 @@ const NOT_CONNECTED_MESSAGE = 'Usuário não conectou o Google Agenda.';
 
 function createOAuth2Client() {
   return new google.auth.OAuth2(
-    process.env.GOOGLE_CLIENT_ID,
-    process.env.GOOGLE_CLIENT_SECRET,
-    process.env.GOOGLE_REDIRECT_URI
+    env.google?.clientId,
+    env.google?.clientSecret,
+    env.google?.redirectUri
   );
 }
 

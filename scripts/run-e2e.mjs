@@ -92,7 +92,7 @@ async function main() {
     BACKEND_PORT: String(backendPort),
     FRONTEND_PORT: String(frontendPort),
     PORT: '3001',
-    JWT_SECRET: `docsobs-e2e-${process.pid}-local-only`,
+    JWT_SECRET: crypto.randomBytes(48).toString('base64url'),
     RUN_SEED: 'true',
     ADMIN_SEED_PASSWORD:
       process.env.ADMIN_SEED_PASSWORD || crypto.randomBytes(18).toString('base64url'),

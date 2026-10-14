@@ -10,6 +10,8 @@
  *   (padrão `America/Sao_Paulo`), também representada como meia-noite UTC.
  */
 
+import { env } from '../config/env.js';
+
 export const DEFAULT_APP_TIMEZONE = 'America/Sao_Paulo';
 
 export const MS_PER_DAY = 1000 * 60 * 60 * 24;
@@ -28,7 +30,7 @@ function isValidTimeZone(timeZone: string): boolean {
  * `America/Sao_Paulo`). Valores inválidos caem no padrão.
  */
 export function getAppTimeZone(): string {
-  const configured = process.env.APP_TIMEZONE?.trim();
+  const configured = env.APP_TIMEZONE?.trim();
   if (configured && isValidTimeZone(configured)) return configured;
   return DEFAULT_APP_TIMEZONE;
 }

@@ -3,6 +3,7 @@ import { google } from 'googleapis';
 import { prisma } from '../lib/prisma.js';
 import { AuthenticatedRequest } from '../types/index.js';
 import { signOAuthState, verifyOAuthState } from '../utils/jwt.js';
+import { env } from '../config/env.js';
 
 /**
  * Fluxo de conexão OAuth por usuário com o Google Agenda (ADR-009 / DOC-28, subtarefa 2).
@@ -15,22 +16,18 @@ import { signOAuthState, verifyOAuthState } from '../utils/jwt.js';
 const GOOGLE_CALENDAR_SCOPES = ['https://www.googleapis.com/auth/calendar.events'];
 
 function getFrontendUrl(): string {
-  return (process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/+$/, '');
+  return env.FRONTEND_URL.replace(/\/+$/, '');
 }
 
 function isGoogleOAuthConfigured(): boolean {
-  return Boolean(
-    process.env.GOOGLE_CLIENT_ID &&
-      process.env.GOOGLE_CLIENT_SECRET &&
-      process.env.GOOGLE_REDIRECT_URI
-  );
+  return env.google !== null;
 }
 
 function createOAuth2Client() {
   return new google.auth.OAuth2(
-    process.env.GOOGLE_CLIENT_ID,
-    process.env.GOOGLE_CLIENT_SECRET,
-    process.env.GOOGLE_REDIRECT_URI
+    env.google?.clientId,
+    env.google?.clientSecret,
+    env.google?.redirectUri
   );
 }
 

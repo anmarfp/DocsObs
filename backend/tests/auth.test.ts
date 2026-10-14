@@ -22,6 +22,7 @@ import { errorHandler } from '../src/middlewares/errorHandler.js';
 import { login, getMe } from '../src/controllers/authController.js';
 import { app } from '../src/app.js';
 import { AuthenticatedRequest, TokenPayload } from '../src/types/index.js';
+import { env } from '../src/config/env.js';
 
 describe('Suíte de Testes - Módulo de Autenticação, Middlewares e Health Check', () => {
   // Silencia console.error durante a execução dos testes de erro propositais
@@ -60,7 +61,7 @@ describe('Suíte de Testes - Módulo de Autenticação, Middlewares e Health Che
     });
 
     it('deve lançar TokenExpiredError ao verificar token JWT expirado', () => {
-      const secret = process.env.JWT_SECRET || 'docsobs-fallback-secret-key-for-dev';
+      const secret = env.JWT_SECRET;
       const expiredToken = jwt.sign(samplePayload, secret, { expiresIn: '-1s' });
 
       expect(() => {
