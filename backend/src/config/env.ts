@@ -10,6 +10,15 @@ export interface GoogleConfig {
   readonly redirectUri: string;
 }
 
+export interface SmtpConfig {
+  readonly host: string;
+  readonly port: number;
+  readonly user?: string;
+  readonly pass?: string;
+  readonly secure: boolean;
+  readonly from: string;
+}
+
 export interface Env {
   readonly NODE_ENV: 'development' | 'test' | 'production';
   readonly JWT_SECRET: string;
@@ -20,7 +29,9 @@ export interface Env {
   readonly UPLOAD_DIR: string;
   readonly MAX_FILE_SIZE_BYTES: number;
   readonly APP_TIMEZONE?: string;
+  readonly CRON_ENABLED: boolean;
   readonly google: GoogleConfig | null;
+  readonly smtp: SmtpConfig | null;
 }
 
 let processHasWarnedSecret = false;
@@ -78,6 +89,39 @@ const EnvSchema = z
       if (typeof val === 'string' && val.trim() !== '') return val.trim();
       return undefined;
     }, z.string().optional()),
+    CRON_ENABLED: z.preprocess((val) => {
+      if (val === undefined || val === '') return true;
+      if (val === 'true' || val === true) return true;
+      if (val === 'false' || val === false) return false;
+      return val;
+    }, z.boolean({ invalid_type_error: 'CRON_ENABLED deve ser um booleano' })),
+    SMTP_HOST: z.preprocess((val) => {
+      if (typeof val === 'string' && val.trim() !== '') return val.trim();
+      return undefined;
+    }, z.string().optional()),
+    SMTP_PORT: z.preprocess((val) => {
+      if (val === undefined || val === '') return 587;
+      const num = Number(val);
+      return Number.isNaN(num) ? val : num;
+    }, z.number({ invalid_type_error: 'SMTP_PORT deve ser um número válido' }).int('SMTP_PORT deve ser um número inteiro').positive('SMTP_PORT deve ser maior que zero').max(65535, 'SMTP_PORT deve ser uma porta válida')),
+    SMTP_USER: z.preprocess((val) => {
+      if (typeof val === 'string' && val.trim() !== '') return val.trim();
+      return undefined;
+    }, z.string().optional()),
+    SMTP_PASS: z.preprocess((val) => {
+      if (typeof val === 'string' && val.trim() !== '') return val.trim();
+      return undefined;
+    }, z.string().optional()),
+    SMTP_SECURE: z.preprocess((val) => {
+      if (val === undefined || val === '') return false;
+      if (val === 'true' || val === true) return true;
+      if (val === 'false' || val === false) return false;
+      return val;
+    }, z.boolean({ invalid_type_error: 'SMTP_SECURE deve ser um booleano' })),
+    EMAIL_FROM: z.preprocess((val) => {
+      if (typeof val === 'string' && val.trim() !== '') return val.trim();
+      return undefined;
+    }, z.string().optional()),
   })
   .superRefine((data, ctx) => {
     if (data.NODE_ENV === 'production') {
@@ -120,6 +164,36 @@ const EnvSchema = z
         });
       }
     }
+
+    if (data.SMTP_HOST) {
+      if (!data.EMAIL_FROM) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['EMAIL_FROM'],
+          message: 'EMAIL_FROM é obrigatório quando SMTP_HOST está configurado.',
+        });
+      }
+      const hasUser = Boolean(data.SMTP_USER);
+      const hasPass = Boolean(data.SMTP_PASS);
+      if (hasUser !== hasPass) {
+        const missing = hasUser ? 'SMTP_PASS' : 'SMTP_USER';
+        const present = hasUser ? 'SMTP_USER' : 'SMTP_PASS';
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [missing],
+          message: `${missing} é obrigatório quando ${present} está configurado.`,
+        });
+      }
+    } else {
+      if (data.SMTP_USER || data.SMTP_PASS) {
+        const present = data.SMTP_USER ? 'SMTP_USER' : 'SMTP_PASS';
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['SMTP_HOST'],
+          message: `SMTP_HOST é obrigatório quando ${present} está configurado.`,
+        });
+      }
+    }
   });
 
 export function loadEnv(
@@ -159,6 +233,17 @@ export function loadEnv(
         })
       : null;
 
+  const smtp: SmtpConfig | null = parsed.data.SMTP_HOST
+    ? Object.freeze({
+        host: parsed.data.SMTP_HOST,
+        port: parsed.data.SMTP_PORT,
+        user: parsed.data.SMTP_USER,
+        pass: parsed.data.SMTP_PASS,
+        secure: parsed.data.SMTP_SECURE,
+        from: parsed.data.EMAIL_FROM!,
+      })
+    : null;
+
   return Object.freeze({
     NODE_ENV: parsed.data.NODE_ENV,
     JWT_SECRET: jwtSecret,
@@ -169,7 +254,9 @@ export function loadEnv(
     UPLOAD_DIR: parsed.data.UPLOAD_DIR,
     MAX_FILE_SIZE_BYTES: parsed.data.MAX_FILE_SIZE_BYTES,
     APP_TIMEZONE: parsed.data.APP_TIMEZONE,
+    CRON_ENABLED: parsed.data.CRON_ENABLED,
     google,
+    smtp,
   });
 }
 

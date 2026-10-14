@@ -291,7 +291,7 @@ SENÃO:
 ```
 
 - **Recálculo em Tempo Real**: Executado a cada mutação (criação, edição, renovação).
-- **Recálculo Batch Agendado**: Executado automaticamente diariamente à meia-noite (`00:00:00`) via `cronService.ts`, atualizando todos os registros e disparando os alertas de e-mail pertinentes.
+- **Recálculo Batch Agendado**: Executado automaticamente diariamente à meia-noite (`00:00:00` no fuso `APP_TIMEZONE`) via scheduler in-process (`node-cron`) protegido por lock consultivo transacional PostgreSQL (`pg_try_advisory_xact_lock`), executando `recalculateAllStatuses()` e `runDailyDigestJob()` e disparando os alertas reais via SMTP (`nodemailer`).
 
 ---
 

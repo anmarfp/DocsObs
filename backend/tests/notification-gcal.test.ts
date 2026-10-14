@@ -33,6 +33,10 @@ vi.mock('googleapis', () => ({
   },
 }));
 
+vi.mock('../src/services/mailService.js', () => ({
+  sendMail: vi.fn().mockResolvedValue({ dispatched: true, messageId: 'mock-mail-id' }),
+}));
+
 vi.mock('../src/lib/prisma.js', () => ({
   prisma: {
     companyConfig: { findFirst: vi.fn() },
@@ -209,7 +213,7 @@ describe('Passo 8 - Notificações, cron e Google Calendar', () => {
       }));
       expect(prisma.document.update).not.toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'renewal' } }));
       expect(prisma.document.update).not.toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'indeterminate' } }));
-      expect(result).toEqual({ totalProcessed: 4, updatedCount: 2, alertsSent: 2 });
+      expect(result).toEqual({ totalProcessed: 4, updatedCount: 2, alertsSent: 2, alertsFailed: 0 });
     });
 
     it('executa o digest diário para os administradores ativos', async () => {
