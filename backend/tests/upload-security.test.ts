@@ -15,8 +15,8 @@ const { TEST_UPLOAD_DIR } = vi.hoisted(() => {
   return { TEST_UPLOAD_DIR: dir };
 });
 
-vi.mock('../src/lib/prisma.js', () => ({
-  prisma: {
+vi.mock('../src/lib/prisma.js', () => {
+  const mockPrisma: any = {
     user: { findUnique: vi.fn() },
     companyConfig: { findFirst: vi.fn() },
     documentCategory: { findUnique: vi.fn() },
@@ -29,8 +29,12 @@ vi.mock('../src/lib/prisma.js', () => ({
       count: vi.fn(),
     },
     auditLog: { create: vi.fn() },
-  },
-}));
+    $transaction: vi.fn(async (callback: any) =>
+      typeof callback === 'function' ? callback(mockPrisma) : Promise.all(callback)
+    ),
+  };
+  return { prisma: mockPrisma };
+});
 
 import { Role, DocumentStatus, NotificationMode } from '@prisma/client';
 import { app } from '../src/app.js';

@@ -345,8 +345,15 @@ sequenceDiagram
     API->>Storage: Grava em /app/uploads com nome aleatório e extensão do tipo detectado
     API->>API: Calcula Status visual inicial (RN-001)
     API->>DB: Inicia transação: INSERT INTO documents & INSERT INTO audit_logs (Action: 'CREATE')
-    DB-->>API: Transação confirmada
-    API-->>UI: Retorna 201 Created com objeto do documento
+    alt Transação confirmada
+        DB-->>API: Commit da transação
+        API->>API: Efeitos externos pós-commit: sincronização Google Agenda (RN-007, não bloqueante)
+        API-->>UI: Retorna 201 Created com objeto do documento
+    else Falha na transação
+        DB-->>API: Rollback automático
+        API->>Storage: Remove novo arquivo recém-gravado em disco
+        API-->>UI: Retorna erro 5xx
+    end
     UI-->>User: Exibe toast de sucesso e atualiza tabela/dashboard em tempo real
 ```
 
@@ -378,10 +385,24 @@ sequenceDiagram
     User->>UI: Preenche novas datas + Anexa novo arquivo + Confirma
     UI->>API: POST /api/v1/documents/:id/renew (multipart/form-data)
     API->>Storage: Salva novo arquivo anexo
-    API->>DB: Transação atômica:
-    Note over API,DB: 1. INSERT INTO document_versions (dados da versão anterior)\n2. UPDATE documents (novas datas, novo anexo, status recalculado para REGULAR)\n3. INSERT INTO audit_logs (Action: 'RENEW', diff_data completo)
-    DB-->>API: Commit da transação
-    API-->>UI: Retorna documento atualizado com versão incrementada
+    loop Tentativas de concorrência (até 3x em caso de conflito P2002)
+        API->>DB: Transação atômica (prisma.$transaction):
+        Note over API,DB: 1. SELECT max(version_number) + 1 via aggregate\n2. INSERT INTO document_versions (unique document_id, version_number)\n3. UPDATE documents (novas datas, novo anexo, status recalculado)\n4. INSERT INTO audit_logs (Action: 'RENEW', diff_data completo)
+        alt Sucesso
+            DB-->>API: Commit da transação
+        else Conflito de versão (P2002)
+            DB-->>API: Rollback da transação (tenta novamente até 3 vezes)
+        end
+    end
+    alt Transação confirmada com sucesso
+        API-->>UI: Retorna documento atualizado com versão incrementada (200 OK)
+    else Esgotou 3 tentativas por conflito (P2002)
+        API->>Storage: Remove novo arquivo recém-gravado em disco (preserva anexo original)
+        API-->>UI: Retorna 409 Conflict com mensagem explicativa em português
+    else Falha inesperada
+        API->>Storage: Remove novo arquivo recém-gravado em disco (preserva anexo original)
+        API-->>UI: Retorna erro 5xx
+    end
     UI-->>User: Atualiza visual com badge de versão e disponibiliza aba de histórico
 ```
 

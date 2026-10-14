@@ -18,8 +18,8 @@ import {
 } from '../src/services/storageService.js';
 
 // Mock do Prisma
-vi.mock('../src/lib/prisma.js', () => ({
-  prisma: {
+vi.mock('../src/lib/prisma.js', () => {
+  const mockPrisma: any = {
     user: {
       findUnique: vi.fn(),
     },
@@ -40,8 +40,12 @@ vi.mock('../src/lib/prisma.js', () => ({
     auditLog: {
       create: vi.fn(),
     },
-  },
-}));
+    $transaction: vi.fn(async (callback: any) =>
+      typeof callback === 'function' ? callback(mockPrisma) : Promise.all(callback)
+    ),
+  };
+  return { prisma: mockPrisma };
+});
 
 import { prisma } from '../src/lib/prisma.js';
 

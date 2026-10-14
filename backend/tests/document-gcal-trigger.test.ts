@@ -15,8 +15,8 @@ vi.mock('../src/services/gcalService.js', () => ({
   deleteDocumentEvent: vi.fn(),
 }));
 
-vi.mock('../src/lib/prisma.js', () => ({
-  prisma: {
+vi.mock('../src/lib/prisma.js', () => {
+  const mockPrisma: any = {
     user: {
       findUnique: vi.fn(),
     },
@@ -37,8 +37,12 @@ vi.mock('../src/lib/prisma.js', () => ({
     auditLog: {
       create: vi.fn(),
     },
-  },
-}));
+    $transaction: vi.fn(async (callback: any) =>
+      typeof callback === 'function' ? callback(mockPrisma) : Promise.all(callback)
+    ),
+  };
+  return { prisma: mockPrisma };
+});
 
 import { prisma } from '../src/lib/prisma.js';
 import { syncDocumentEvent, deleteDocumentEvent } from '../src/services/gcalService.js';

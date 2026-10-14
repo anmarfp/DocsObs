@@ -7,24 +7,29 @@ import { generateToken } from '../src/utils/jwt.js';
 
 // Mock do Prisma Client
 vi.mock('../src/lib/prisma.js', () => {
-  return {
-    prisma: {
-      document: {
-        findUnique: vi.fn(),
-        update: vi.fn(),
-      },
-      documentVersion: {
-        count: vi.fn(),
-        create: vi.fn(),
-        findMany: vi.fn(),
-      },
-      auditLog: {
-        count: vi.fn(),
-        create: vi.fn(),
-        findMany: vi.fn(),
-        findUnique: vi.fn(),
-      },
+  const mockPrisma: any = {
+    document: {
+      findUnique: vi.fn(),
+      update: vi.fn(),
     },
+    documentVersion: {
+      count: vi.fn(),
+      aggregate: vi.fn(),
+      create: vi.fn(),
+      findMany: vi.fn(),
+    },
+    auditLog: {
+      count: vi.fn(),
+      create: vi.fn(),
+      findMany: vi.fn(),
+      findUnique: vi.fn(),
+    },
+    $transaction: vi.fn(async (callback: any) =>
+      typeof callback === 'function' ? callback(mockPrisma) : Promise.all(callback)
+    ),
+  };
+  return {
+    prisma: mockPrisma,
   };
 });
 
@@ -80,6 +85,7 @@ describe('Passo 7 - Renovação de Documentos, Versões e Trilha Geral de Audito
     it('deve renovar documento arquivando versão vigente no histórico e atualizando dados vigentes (status REGULAR)', async () => {
       (prisma.document.findUnique as any).mockResolvedValue(sampleDoc);
       (prisma.documentVersion.count as any).mockResolvedValue(0);
+      (prisma.documentVersion.aggregate as any).mockResolvedValue({ _max: { versionNumber: null } });
       (prisma.documentVersion.create as any).mockResolvedValue({
         id: 'ver-uuid-1',
         documentId: sampleDoc.id,
