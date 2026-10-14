@@ -1,0 +1,97 @@
+{
+  "schema": "aihaus.evidence.v1",
+  "verdict": "PASS",
+  "commit": "6734693",
+  "acceptance": [
+    {
+      "criterion": "Recalculo de status e digest de alertas agendados in-process (node-cron) diariamente a 00:00 no fuso de negocio, sem intervencao manual",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npx vitest run tests/doc31-cron-email.test.ts (cron.schedule '0 0 * * *', timezone America/Sao_Paulo; CRON_ENABLED/test)",
+          "exit_code": 0
+        },
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npx tsx doc31-integ (executeDailyJob real em postgres descartavel: REGULAR->CRITICAL)",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "criterion": "Envio real via SMTP (nodemailer) usando SMTP_HOST/PORT/USER/PASS/EMAIL_FROM",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "executeDailyJob contra axllent/mailpit descartavel; GET /api/v1/messages total=2 (alerta + digest)",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "criterion": "Falha de SMTP ou SMTP nao configurado e registrada e nao retorna success: true",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npx vitest run tests/doc31-cron-email.test.ts (smtp null, 3 falhas, sendExpirationAlert success:false)",
+          "exit_code": 0
+        },
+        {
+          "rung": "ran",
+          "source": "tool",
+          "command": "executor: Mailpit parado -> success:false, dispatched:false, ECONNREFUSED apos 3 tentativas",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "criterion": "Protecao contra dupla execucao (pg advisory lock)",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "Promise.all([executeDailyJob(), executeDailyJob()]) em postgres real -> um {skipped:true}, um executado",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "criterion": "Testes cobrindo o agendamento (relogio congelado) e o caminho de erro do envio",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npx vitest run (266/266 em 6734693) + npm run test:e2e 19/19",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "criterion": "Entrega real em caixa Mailtrap ou equivalente (degradado sem credenciais)",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "curl http://localhost:18026/api/v1/messages (Mailpit descartavel) -> mensagens para admin@teste.local",
+          "exit_code": 0
+        }
+      ]
+    }
+  ]
+}
