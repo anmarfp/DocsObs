@@ -6,6 +6,21 @@ import {
   DocumentVersion,
 } from '../types/document.types';
 
+/**
+ * Tipos de anexo que podem ser renderizados num blob: do origin da aplicação
+ * (DOC-34). Qualquer outro Content-Type vira application/octet-stream, que o
+ * navegador baixa em vez de renderizar (evita executar HTML/SVG/script).
+ */
+const VIEWABLE_ATTACHMENT_TYPES = ['application/pdf', 'image/png', 'image/jpeg'] as const;
+
+export function resolveAttachmentBlobType(headerType: unknown): string {
+  if (typeof headerType !== 'string') return 'application/octet-stream';
+  const base = headerType.split(';')[0].trim().toLowerCase();
+  return (VIEWABLE_ATTACHMENT_TYPES as readonly string[]).includes(base)
+    ? base
+    : 'application/octet-stream';
+}
+
 export const documentService = {
   /**
    * List documents with optional filters (search, categoryId, status, includeArchived).
@@ -132,8 +147,7 @@ export const documentService = {
       responseType: 'blob',
     });
 
-    const headerType = response.headers['content-type'];
-    const mimeType = typeof headerType === 'string' ? headerType : 'application/octet-stream';
+    const mimeType = resolveAttachmentBlobType(response.headers['content-type']);
     const blob = new Blob([response.data], { type: mimeType });
     const blobUrl = window.URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -154,8 +168,7 @@ export const documentService = {
       responseType: 'blob',
     });
 
-    const headerType = response.headers['content-type'];
-    const mimeType = typeof headerType === 'string' ? headerType : 'application/pdf';
+    const mimeType = resolveAttachmentBlobType(response.headers['content-type']);
     const blob = new Blob([response.data], { type: mimeType });
     const blobUrl = window.URL.createObjectURL(blob);
     window.open(blobUrl, '_blank');

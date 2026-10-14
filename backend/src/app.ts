@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
 import { authRouter } from './routes/authRoutes.js';
 import { documentRouter } from './routes/documentRoutes.js';
 import { userRouter } from './routes/userRoutes.js';
@@ -12,11 +13,34 @@ import { dashboardRouter } from './routes/dashboardRoutes.js';
 import { reportRouter } from './routes/reportRoutes.js';
 import { authMiddleware } from './middlewares/auth.js';
 import { errorHandler } from './middlewares/errorHandler.js';
-import { UPLOADS_DIR } from './services/storageService.js';
+import {
+  UPLOADS_DIR,
+  rejectDisallowedUploadExtension,
+  setAttachmentHeaders,
+} from './services/storageService.js';
 
 export const app = express();
 
 // Middlewares Globais
+// helmet: cabeçalhos de segurança (nosniff, frameguard, HSTS etc.). A API só
+// devolve JSON/arquivos, então a CSP é restritiva: nada pode ser carregado ou
+// executado a partir de respostas deste servidor. O SPA é servido pelo Nginx.
+// crossOriginResourcePolicy fica no padrão `same-origin`: o frontend acessa a
+// API pelo mesmo origin (proxy do Vite em dev e do Nginx em produção).
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      useDefaults: false,
+      directives: {
+        defaultSrc: ["'none'"],
+        frameAncestors: ["'none'"],
+        baseUri: ["'none'"],
+        formAction: ["'none'"],
+        sandbox: [],
+      },
+    },
+  })
+);
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -31,7 +55,19 @@ app.get('/api/v1/health', (req, res) => {
 });
 
 // Armazenamento de Arquivos Estáticos Protegido por Autenticação
-app.use('/api/v1/uploads', authMiddleware, express.static(UPLOADS_DIR));
+// Anexos: só extensões allow-listed; sempre servidos como download (attachment),
+// com Content-Type fixo pela extensão e X-Content-Type-Options: nosniff (DOC-34).
+app.use(
+  '/api/v1/uploads',
+  authMiddleware,
+  rejectDisallowedUploadExtension,
+  express.static(UPLOADS_DIR, {
+    index: false,
+    dotfiles: 'deny',
+    redirect: false,
+    setHeaders: (res, filePath) => setAttachmentHeaders(res, filePath),
+  })
+);
 
 // Rotas da API
 app.use('/api/v1/auth', authRouter);
