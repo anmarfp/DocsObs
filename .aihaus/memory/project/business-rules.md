@@ -18,7 +18,7 @@ comportamento do código é anotado separadamente quando diverge.
 - **links:** implements: [RF-004 via statusService], relates: [], decided-by: []
 
 - Given um documento com vencimento em 10 dias e antecedência de 30 When o status é calculado Then o status é `CRITICAL`. Source: `backend/src/services/statusService.ts` (reviewed 824aace).
-- Unresolved: o PRD/ARCHITECTURE dizem que o recálculo é agendado diariamente à meia-noite via `cronService.ts`, mas no código não há agendador; o recálculo em lote só roda por `POST /notifications/recalculate`. Source: `backend/src/controllers/notificationController.ts` (reviewed 824aace).
+- Verified: o recálculo em lote e o digest rodam diariamente às 00:00 em `APP_TIMEZONE` via `node-cron` in-process, sob `pg_try_advisory_xact_lock` (uma réplica por vez); `CRON_ENABLED=false` desliga. "Hoje" é a data civil em `APP_TIMEZONE` (padrão America/Sao_Paulo) e vencimentos são datas civis em meia-noite UTC (DOC-27, DOC-31). Source: `backend/src/services/scheduler.ts`, `backend/src/utils/date.ts` (reviewed 60daa31).
 
 ### RN-002 — Imutabilidade do histórico de renovações
 
@@ -40,7 +40,7 @@ comportamento do código é anotado separadamente quando diverge.
 - **last-reviewed:** 824aace
 - **links:** implements: [RF-007, RF-008], relates: [RN-004], decided-by: []
 
-- Unresolved: `sendExpirationAlert` monta assunto/corpo e retorna `success: true` sem transporte de e-mail (nenhuma lib SMTP/API nas dependências); o envio real não está implementado. Source: `backend/src/services/notificationService.ts` (reviewed 824aace).
+- Verified: `sendExpirationAlert`/`sendDailyDigest` enviam por SMTP (`nodemailer`, 3 tentativas); sem `SMTP_HOST` ou com falha retornam `success: false` e registram erro, e `alertsFailed` conta as falhas (DOC-31). Source: `backend/src/services/mailService.ts`, `backend/src/services/notificationService.ts` (reviewed 60daa31).
 
 ### RN-004 — Responsável condicional ao modo da empresa
 

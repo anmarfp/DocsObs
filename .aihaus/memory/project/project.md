@@ -28,4 +28,4 @@
 ## Current constraints
 
 - Verified: PRD (v1.0.0) e ARCHITECTURE (v1.1.0) declaram as Fases 1 a 4 concluídas e o sistema "Em Produção". Source: `docs/ARCHITECTURE.md` (reviewed 5186755).
-- Unresolved: os docs afirmam recálculo diário automático, envio de e-mails e validação de magic bytes, mas o código não confirma esses três pontos — ver `knowledge.md` (Conflitos entre docs e código). Source: `backend/src/services/cronService.ts` (reviewed 824aace).
+- Verified: recálculo diário automático (DOC-31), envio de e-mails por SMTP (DOC-31) e validação de magic bytes (DOC-34) existem no código desde a onda P0 de 2026-10-14. Source: `backend/src/services/scheduler.ts` (reviewed 60daa31).
