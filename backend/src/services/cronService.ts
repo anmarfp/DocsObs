@@ -11,6 +11,7 @@ export interface RecalculateStatusesResult {
   totalProcessed: number;
   updatedCount: number;
   alertsSent: number;
+  alertsFailed: number;
 }
 
 /**
@@ -31,6 +32,7 @@ export async function recalculateAllStatuses(baseDate?: Date): Promise<Recalcula
 
   let updatedCount = 0;
   let alertsSent = 0;
+  let alertsFailed = 0;
 
   for (const doc of documents) {
     // Preserva estados manuais e documentos sem vencimento (permanentes)
@@ -59,12 +61,16 @@ export async function recalculateAllStatuses(baseDate?: Date): Promise<Recalcula
       if (newStatus === DocumentStatus.CRITICAL || newStatus === DocumentStatus.EXPIRED) {
         const recipients = resolveNotificationRecipients(doc, config, admins);
         if (recipients.length > 0) {
-          await sendExpirationAlert(
+          const alertResult = await sendExpirationAlert(
             { ...doc, status: newStatus },
             recipients,
             newStatus === DocumentStatus.CRITICAL
           );
-          alertsSent++;
+          if (alertResult.dispatched) {
+            alertsSent++;
+          } else {
+            alertsFailed++;
+          }
         }
       }
     }
@@ -74,6 +80,7 @@ export async function recalculateAllStatuses(baseDate?: Date): Promise<Recalcula
     totalProcessed: documents.length,
     updatedCount,
     alertsSent,
+    alertsFailed,
   };
 }
 

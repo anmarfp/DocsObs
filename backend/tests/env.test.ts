@@ -118,6 +118,108 @@ describe('DOC-33 - Validação de Variáveis de Ambiente (src/config/env.ts)', (
       expect(errorMessage).toContain('JWT_SECRET');
       expect(errorMessage).not.toContain(badSecret);
     });
+
+    it('define CRON_ENABLED como true por padrão quando omitido ou vazio', () => {
+      const envDefault = loadEnv({});
+      expect(envDefault.CRON_ENABLED).toBe(true);
+
+      const envEmpty = loadEnv({ CRON_ENABLED: '' });
+      expect(envEmpty.CRON_ENABLED).toBe(true);
+    });
+
+    it('define CRON_ENABLED como false quando "false"', () => {
+      const envDisabled = loadEnv({ CRON_ENABLED: 'false' });
+      expect(envDisabled.CRON_ENABLED).toBe(false);
+    });
+
+    it('define env.smtp como null quando SMTP_HOST não está definido ou está vazio', () => {
+      const envNone = loadEnv({});
+      expect(envNone.smtp).toBeNull();
+
+      const envEmpty = loadEnv({ SMTP_HOST: '   ' });
+      expect(envEmpty.smtp).toBeNull();
+    });
+
+    it('lança erro quando SMTP_HOST está configurado mas EMAIL_FROM está ausente', () => {
+      expect(() =>
+        loadEnv({
+          SMTP_HOST: 'smtp.example.com',
+        })
+      ).toThrowError(/EMAIL_FROM/);
+    });
+
+    it('lança erro quando SMTP_USER está configurado mas SMTP_PASS está ausente', () => {
+      expect(() =>
+        loadEnv({
+          SMTP_HOST: 'smtp.example.com',
+          EMAIL_FROM: 'alertas@docsobs.com',
+          SMTP_USER: 'user-docsobs',
+        })
+      ).toThrowError(/SMTP_PASS/);
+    });
+
+    it('lança erro quando SMTP_PASS está configurado mas SMTP_USER está ausente', () => {
+      expect(() =>
+        loadEnv({
+          SMTP_HOST: 'smtp.example.com',
+          EMAIL_FROM: 'alertas@docsobs.com',
+          SMTP_PASS: 'secret-pass',
+        })
+      ).toThrowError(/SMTP_USER/);
+    });
+
+    it('não expõe o valor de SMTP_PASS no erro quando SMTP_USER está ausente', () => {
+      const secretPass = 'super-secret-smtp-password-123';
+      let errorMessage = '';
+      try {
+        loadEnv({
+          SMTP_HOST: 'smtp.example.com',
+          EMAIL_FROM: 'alertas@docsobs.com',
+          SMTP_PASS: secretPass,
+        });
+      } catch (error) {
+        errorMessage = error instanceof Error ? error.message : String(error);
+      }
+
+      expect(errorMessage).toContain('SMTP_USER');
+      expect(errorMessage).not.toContain(secretPass);
+    });
+
+    it('popula env.smtp com portas e flags padrão (587, secure=false) quando configurado sem credenciais', () => {
+      const loaded = loadEnv({
+        SMTP_HOST: 'smtp.example.com',
+        EMAIL_FROM: 'alertas@docsobs.com',
+      });
+
+      expect(loaded.smtp).toEqual({
+        host: 'smtp.example.com',
+        port: 587,
+        user: undefined,
+        pass: undefined,
+        secure: false,
+        from: 'alertas@docsobs.com',
+      });
+    });
+
+    it('popula env.smtp completamente com porta 465, secure=true e credenciais de autenticação', () => {
+      const loaded = loadEnv({
+        SMTP_HOST: 'smtp.example.com',
+        SMTP_PORT: '465',
+        SMTP_SECURE: 'true',
+        SMTP_USER: 'usuario',
+        SMTP_PASS: 'senha-secreta',
+        EMAIL_FROM: 'DocsObs <alertas@docsobs.com>',
+      });
+
+      expect(loaded.smtp).toEqual({
+        host: 'smtp.example.com',
+        port: 465,
+        user: 'usuario',
+        pass: 'senha-secreta',
+        secure: true,
+        from: 'DocsObs <alertas@docsobs.com>',
+      });
+    });
   });
 
   describe('Boot test', () => {
