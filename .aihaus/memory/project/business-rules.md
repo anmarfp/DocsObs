@@ -13,9 +13,9 @@ comportamento do código é anotado separadamente quando diverge.
 - **status:** accepted
 - **domain:** software
 - **statement:** O status visual do documento é calculado no backend: `INDETERMINATE` sem vencimento; `RENEWAL_IN_PROGRESS` por sinalização manual; `EXPIRED` se vencido; `CRITICAL` se faltam `<= alert_lead_days` dias; senão `REGULAR`.
-- **source:** `docs/PRD.md` (reviewed 824aace)
+- **source**: `docs/PRD.md` (reviewed 824aace)
 - **last-reviewed:** 824aace
-- **links:** implements: [`backend/src/services/statusService.ts`], relates: [RF-004], decided-by: []
+- **links:** implements: [RF-004 via statusService], relates: [], decided-by: []
 
 - Given um documento com vencimento em 10 dias e antecedência de 30 When o status é calculado Then o status é `CRITICAL`. Source: `backend/src/services/statusService.ts` (reviewed 824aace).
 - Unresolved: o PRD/ARCHITECTURE dizem que o recálculo é agendado diariamente à meia-noite via `cronService.ts`, mas no código não há agendador; o recálculo em lote só roda por `POST /notifications/recalculate`. Source: `backend/src/controllers/notificationController.ts` (reviewed 824aace).
@@ -25,18 +25,18 @@ comportamento do código é anotado separadamente quando diverge.
 - **status:** accepted
 - **domain:** data
 - **statement:** Ao renovar, a versão anterior é copiada para `document_versions` com numeração sequencial e preservada.
-- **source:** `docs/PRD.md` (reviewed 824aace)
+- **source**: `docs/PRD.md` (reviewed 824aace)
 - **last-reviewed:** 824aace
 - **links:** implements: [RF-003], relates: [RN-008], decided-by: []
 
-- Given um documento renovado When uma nova versão é registrada Then a versão anterior permanece no histórico. Source: `docs/ARCHITECTURE.md` (reviewed 824aace).
+- Given um documento renovado When uma nova versão é registrada Then a versão anterior permanece no histórico. Source: `docs/ARCHITECTURE.md` (reviewed 5186755).
 
 ### RN-003 — Alerta mandatório
 
 - **status:** accepted
 - **domain:** software
 - **statement:** Todo documento com data de vencimento ativa gera notificações no período de antecedência configurado.
-- **source:** `docs/PRD.md` (reviewed 824aace)
+- **source**: `docs/PRD.md` (reviewed 824aace)
 - **last-reviewed:** 824aace
 - **links:** implements: [RF-007, RF-008], relates: [RN-004], decided-by: []
 
@@ -47,7 +47,7 @@ comportamento do código é anotado separadamente quando diverge.
 - **status:** accepted
 - **domain:** software
 - **statement:** No modo `ALL_ADMINS` o campo Responsável é ocultado e todos os administradores recebem os alertas; no modo `ONLY_RESPONSIBLE` o campo é obrigatório e só o e-mail do responsável recebe.
-- **source:** `docs/PRD.md` (reviewed 824aace)
+- **source**: `docs/PRD.md` (reviewed 824aace)
 - **last-reviewed:** 824aace
 - **links:** implements: [RF-012], relates: [RN-003], decided-by: [ADR-L04]
 
@@ -58,7 +58,7 @@ comportamento do código é anotado separadamente quando diverge.
 - **status:** accepted
 - **domain:** architecture
 - **statement:** O MVP atende uma única empresa/organização.
-- **source:** `docs/PRD.md` (reviewed 824aace)
+- **source**: `docs/PRD.md` (reviewed 824aace)
 - **last-reviewed:** 824aace
 - **links:** implements: [], relates: [], decided-by: []
 
@@ -67,7 +67,7 @@ comportamento do código é anotado separadamente quando diverge.
 - **status:** accepted
 - **domain:** security
 - **statement:** Usuários `OPERATIONAL` nunca recebem documentos arquivados nas consultas, e o filtro é omitido na UI.
-- **source:** `docs/PRD.md` (reviewed 824aace)
+- **source**: `docs/PRD.md` (reviewed 824aace)
 - **last-reviewed:** 824aace
 - **links:** implements: [RF-011], relates: [RN-009], decided-by: []
 
@@ -78,7 +78,7 @@ comportamento do código é anotado separadamente quando diverge.
 - **status:** accepted
 - **domain:** software
 - **statement:** Criação, edição, arquivamento e exclusão de documentos com vencimento disparam sincronização com o Google Agenda do usuário que cadastrou o documento, registrando `gcal_sync_logs`; falha de sync nunca bloqueia a resposta.
-- **source:** `docs/ARCHITECTURE.md` (reviewed 824aace)
+- **source**: `docs/ARCHITECTURE.md` (reviewed 5186755)
 - **last-reviewed:** 824aace
 - **links:** implements: [RF-005], relates: [], decided-by: [ADR-009]
 
@@ -89,7 +89,7 @@ comportamento do código é anotado separadamente quando diverge.
 - **status:** accepted
 - **domain:** security
 - **statement:** Qualquer alteração em documentos insere atomicamente em `audit_logs` o autor, timestamp, ação (`CREATE`, `UPDATE`, `ARCHIVE`, `UNARCHIVE`, `DELETE`, `RENEW`) e diff JSON `old`/`new`.
-- **source:** `docs/PRD.md` (reviewed 824aace)
+- **source**: `docs/PRD.md` (reviewed 824aace)
 - **last-reviewed:** 824aace
 - **links:** implements: [RF-013], relates: [RN-002], decided-by: [ADR-A04]
 
@@ -98,7 +98,7 @@ comportamento do código é anotado separadamente quando diverge.
 - **status:** accepted
 - **domain:** security
 - **statement:** Apenas `ADMIN` acessa `/usuarios`, `/auditoria`, `/configuracoes` e as rotas de API correspondentes.
-- **source:** `docs/PRD.md` (reviewed 824aace)
+- **source**: `docs/PRD.md` (reviewed 824aace)
 - **last-reviewed:** 824aace
 - **links:** implements: [RF-014], relates: [RN-006], decided-by: []
 

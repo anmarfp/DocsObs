@@ -27,5 +27,5 @@
 
 ## Current constraints
 
-- Verified: PRD (v1.0.0) e ARCHITECTURE (v1.1.0) declaram as Fases 1 a 4 concluídas e o sistema "Em Produção". Source: `docs/ARCHITECTURE.md` (reviewed 824aace).
+- Verified: PRD (v1.0.0) e ARCHITECTURE (v1.1.0) declaram as Fases 1 a 4 concluídas e o sistema "Em Produção". Source: `docs/ARCHITECTURE.md` (reviewed 5186755).
 - Unresolved: os docs afirmam recálculo diário automático, envio de e-mails e validação de magic bytes, mas o código não confirma esses três pontos — ver `knowledge.md` (Conflitos entre docs e código). Source: `backend/src/services/cronService.ts` (reviewed 824aace).

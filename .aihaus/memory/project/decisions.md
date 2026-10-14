@@ -1,9 +1,12 @@
 # Decisions
 
-Nota de numeração: `docs/ARCHITECTURE.md` §7 numera seus ADRs de 001 a 005, e o
-antigo ledger do aihaus-okf (removido nesta migração; recuperável no histórico
+Nota de numeração: `docs/ARCHITECTURE.md` §7 numera seus próprios ADRs de 001 a
+005 (reviewed 5186755).
+
+O antigo ledger do aihaus-okf (removido nesta migração; recuperável no histórico
 Git no commit 824aace) usava ADR-001 a ADR-009 com significados diferentes.
-Para evitar colisão: `ADR-A0x` = ADRs do ARCHITECTURE.md, `ADR-L0x` = ADRs do
+
+Para evitar colisão: `ADR-A0x` = ADRs do ARCHITECTURE, `ADR-L0x` = ADRs do
 ledger legado, `ADR-009` mantém o número citado pelos docs atuais.
 
 ## ADR-009 — Sincronização Google Agenda via OAuth por usuário
@@ -17,7 +20,7 @@ Related rules: RN-007
 
 ### Context
 
-- Verified: a sincronização com o Google Agenda era simulada e foi substituída por integração real via Google Calendar API. Source: `docs/ARCHITECTURE.md` (reviewed 824aace).
+- Verified: a sincronização com o Google Agenda era simulada e foi substituída por integração real via Google Calendar API. Source: `docs/ARCHITECTURE.md` (reviewed 5186755).
 
 ### Decision
 
@@ -43,7 +46,7 @@ Related rules: none
 
 ### Decision
 
-- Accepted: estrutura monorepo com `backend/` e `frontend/` independentes, scripts no `package.json` raiz e Docker Compose unificado (`docker compose up --build`). Source: `docs/ARCHITECTURE.md` (reviewed 824aace).
+- Accepted: estrutura monorepo com `backend/` e `frontend/` independentes, scripts no `package.json` raiz e Docker Compose unificado (`docker compose up --build`). Source: `docs/ARCHITECTURE.md` (reviewed 5186755).
 
 ## ADR-A02 — Build multi-stage e Nginx como SPA + reverse proxy
 
@@ -56,7 +59,7 @@ Related rules: none
 
 ### Decision
 
-- Accepted: o frontend é compilado em multi-stage e servido por Nginx Alpine, que faz fallback SPA para `index.html` e proxy de `/api/v1/*` para o backend, eliminando CORS. Source: `docs/ARCHITECTURE.md` (reviewed 824aace).
+- Accepted: o frontend é compilado em multi-stage e servido por Nginx Alpine, que faz fallback SPA para `index.html` e proxy de `/api/v1/*` para o backend, eliminando CORS. Source: `docs/ARCHITECTURE.md` (reviewed 5186755).
 
 ## ADR-A03 — Abstração de storage (`IStorageService`)
 
@@ -69,7 +72,7 @@ Related rules: none
 
 ### Decision
 
-- Accepted: anexos ficam em disco local (volume `/app/uploads`) atrás de uma interface de storage, para migrar a S3/Supabase criando nova implementação. Source: `docs/ARCHITECTURE.md` (reviewed 824aace).
+- Accepted: anexos ficam em disco local (volume `/app/uploads`) atrás de uma interface de storage, para migrar a S3/Supabase criando nova implementação. Source: `docs/ARCHITECTURE.md` (reviewed 5186755).
 
 ## ADR-A04 — Auditoria com diff estruturado em JSON
 
@@ -82,7 +85,7 @@ Related rules: RN-008
 
 ### Decision
 
-- Accepted: toda mutação grava em `audit_logs` autor, ação e payload JSONB com `old`/`new`. Source: `docs/ARCHITECTURE.md` (reviewed 824aace).
+- Accepted: toda mutação grava em `audit_logs` autor, ação e payload JSONB com `old`/`new`. Source: `docs/ARCHITECTURE.md` (reviewed 5186755).
 
 ## ADR-A05 — Testes em três camadas
 
@@ -95,7 +98,7 @@ Related rules: none
 
 ### Decision
 
-- Accepted: Vitest no backend (unitário/integração), Vitest + React Testing Library no frontend, e E2E HTTP com Vitest contra containers reais via `scripts/run-e2e.mjs`. Source: `docs/ARCHITECTURE.md` (reviewed 824aace).
+- Accepted: Vitest no backend (unitário/integração), Vitest + React Testing Library no frontend, e E2E HTTP com Vitest contra containers reais via `scripts/run-e2e.mjs`. Source: `docs/ARCHITECTURE.md` (reviewed 5186755).
 
 ## ADR-L04 — Modo global de notificação por empresa
 
