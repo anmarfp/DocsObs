@@ -9,4 +9,4 @@ coverage
 .gitignore
 README.md
 docs/
-.aihaus-okf/
+.aihaus/

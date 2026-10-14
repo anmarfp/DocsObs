@@ -1,0 +1,67 @@
+# Contract: evidence
+
+Completion claims use `aihaus.evidence.v1` and are validated by
+`tools/evidence-validate.mjs`.
+
+Each acceptance criterion records:
+
+- `criterion`: stable human-readable requirement;
+- `status`: `satisfied`, `partial`, or `not_satisfied`;
+- `executable`: whether a command can prove it;
+- `evidence`: one or more rungs.
+
+Rungs are `written`, `ran`, `verified`, or `blocked`. A passing executable
+criterion requires a `ran` or `verified` rung with `source` `tool` or `ci`, a
+non-empty `command`, and integer `exit_code: 0`. Self-reported execution is only
+`written`, even when it uses stronger language.
+
+A document carries `schema`, `verdict` (`PASS`, `BLOCKED`, or `FAIL`), and the
+`acceptance` criteria. Minimal passing example:
+
+```json
+{
+  "schema": "aihaus.evidence.v1",
+  "verdict": "PASS",
+  "acceptance": [
+    {
+      "criterion": "contract tests pass",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        { "rung": "ran", "source": "tool", "command": "node --test", "exit_code": 0 }
+      ]
+    }
+  ]
+}
+```
+
+A PASS document cannot contain partial/not-satisfied criteria. Missing tooling
+must be reported as degraded or blocked, never silently counted as passing.
+
+Every criterion needs at least one evidence entry. A non-executable PASS needs
+support that is not `blocked`, with a non-empty `artifact` reference or `detail`
+describing the actual review. For example:
+`{ "rung": "written", "artifact": "review/approved.png" }`.
+Validators check the document contract; source labels and exit codes are not
+cryptographic proof. The verifier must inspect artifacts and rerun checks.
+Reruns use a clean checkout or export of the candidate SHA, not the executor's
+working copy; a check that passes only with files outside the commit (beyond
+documented setup) or environment another test left behind is a defect to
+report, not a degraded check.
+
+A required judgment pass (review or verification) may be an acceptance criterion
+whose evidence names its verdict receipt, as an artifact or in `detail`. An
+optional `commit` field on the document or a rung is unvalidated metadata: it
+does not prove the evidence applies to that commit.
+
+## Completing a file task
+
+Use checked, unique `- [x] criterion text` items in `## Acceptance`. In
+`## Evidence`, include `Artifact: evidence/task-result.json`, relative to the
+Git root. The JSON must use `aihaus.evidence.v1`, pass the validator, declare
+`PASS`, and cover exactly those criterion texts without extras or duplicates.
+Resolve questions and draft-rule gaps before moving to `done`.
+
+`review` may contain blocked or failed results for discussion; `done` cannot.
+An existing task must acquire valid evidence before its next move to `done`;
+the tool does not rewrite historical task files automatically.

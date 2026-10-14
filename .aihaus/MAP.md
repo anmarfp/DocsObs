@@ -1,0 +1,38 @@
+# aihaus Map
+
+Read `contracts/harness.md` first. Then choose one room; do not preload every
+workflow, role, or ledger.
+
+| Intent | Load |
+|---|---|
+| initialize or refresh project memory | REFRESH.md, contracts/project-bootstrap.md, and the research room |
+| deliver a behavior change | `rooms/feature/CONTEXT.md` |
+| diagnose and fix a defect | `rooms/bugfix/CONTEXT.md` |
+| gather evidence before deciding | `rooms/research/CONTEXT.md` |
+| small mechanical change | feature room, use its quick path |
+| deploy, release, rollback, secrets | `contracts/ops-safety.md` plus the active room |
+| review or completion claim | `contracts/adversarial-review.md` and `contracts/evidence.md` |
+
+Load `conventions.md` whenever files or durable memory may change. Select one
+primary role from `roles/`: orchestrator, planner, implementer, researcher,
+reviewer, or verifier. Roles describe responsibility; rooms describe the work.
+
+Follow the harness context check before substantive work and on resumption.
+`memory/project/README.md` maps questions to memory pages; retrieve only relevant
+entries and verify their cited sources. The current task carries scope,
+rule/decision references, gaps, and evidence: a Markdown file in
+`memory/kanban/`, or the external tracker item when an accepted decision makes
+that tracker the task authority.
+
+Project routes, assignments, profiles, and permissions live in project memory,
+not in package-owned files (see conventions.md). When the project defines them,
+`memory/project/procedures.md` holds Assignments (routes, profiles, the default
+role and profile for the user-facing session, and the default execution mode)
+and Autonomy (accepted integration permissions). A request may name an
+execution mode instead; the harness defines the modes. Load Assignments before
+delegating or adopting the default session role. Check Autonomy before any
+integration, including solo work; without applicable authorization, stop
+before the first remote write.
+
+If no row fits, use the smallest existing room and record the missing case in
+the task. A new room requires repeated lab evidence, not a one-off request.

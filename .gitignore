@@ -26,9 +26,10 @@ uploads/
 .DS_Store
 Thumbs.db
 
-<!-- AIHAUS-OKF:START -->
-/.aihaus-okf-download/
-.aihaus-okf/backups/
-.aihaus-okf/memory/codebase/*.sqlite
-.aihaus-okf/memory/codebase/*.sqlite-journal
-<!-- AIHAUS-OKF:END -->
+
+<!-- AIHAUS:START -->
+/.aihaus-download/
+.aihaus/state/
+.aihaus/runtime/
+.aihaus/backups/
+<!-- AIHAUS:END -->
