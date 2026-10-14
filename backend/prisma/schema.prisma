@@ -141,7 +141,7 @@ model DocumentVersion {
   renewedBy          User      @relation("VersionRenewer", fields: [renewedById], references: [id])
   createdAt          DateTime  @default(now()) @map("created_at")
 
-  @@index([documentId])
+  @@unique([documentId, versionNumber])
   @@index([renewedById])
   @@map("document_versions")
 }

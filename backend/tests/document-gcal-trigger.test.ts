@@ -15,8 +15,8 @@ vi.mock('../src/services/gcalService.js', () => ({
   deleteDocumentEvent: vi.fn(),
 }));
 
-vi.mock('../src/lib/prisma.js', () => ({
-  prisma: {
+vi.mock('../src/lib/prisma.js', () => {
+  const mockPrisma: any = {
     user: {
       findUnique: vi.fn(),
     },
@@ -37,8 +37,12 @@ vi.mock('../src/lib/prisma.js', () => ({
     auditLog: {
       create: vi.fn(),
     },
-  },
-}));
+    $transaction: vi.fn(async (callback: any) =>
+      typeof callback === 'function' ? callback(mockPrisma) : Promise.all(callback)
+    ),
+  };
+  return { prisma: mockPrisma };
+});
 
 import { prisma } from '../src/lib/prisma.js';
 import { syncDocumentEvent, deleteDocumentEvent } from '../src/services/gcalService.js';
@@ -296,7 +300,7 @@ describe('DOC-28 (4/5) - Gatilho automático de sincronização com o Google Age
   // DELETE /api/v1/documents/:id (deleteDocument - hard delete)
   // =========================================================================
   describe('deleteDocument', () => {
-    it('chama deleteDocumentEvent ANTES de prisma.document.delete (ordem importa por causa do cascade em GCalSyncLog)', async () => {
+    it('chama deleteDocumentEvent APÓS prisma.document.delete (efeito externo após commit da transação)', async () => {
       const callOrder: string[] = [];
 
       (prisma.document.findUnique as any).mockResolvedValue(sampleDoc);
@@ -315,7 +319,7 @@ describe('DOC-28 (4/5) - Gatilho automático de sincronização com o Google Age
         .set('Authorization', `Bearer ${adminToken}`);
 
       expect(res.status).toBe(200);
-      expect(callOrder).toEqual(['deleteDocumentEvent', 'document.delete']);
+      expect(callOrder).toEqual(['document.delete', 'deleteDocumentEvent']);
       expect(deleteDocumentEvent).toHaveBeenCalledWith(
         expect.objectContaining({ id: sampleDoc.id, createdById: sampleDoc.createdById })
       );

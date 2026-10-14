@@ -7,6 +7,13 @@ import { calculateDocumentStatus } from '../services/statusService.js';
 import { deleteUploadedFile } from '../services/storageService.js';
 import { syncDocumentEvent, deleteDocumentEvent } from '../services/gcalService.js';
 
+function isPrismaP2002Error(error: unknown): boolean {
+  if (error instanceof Prisma.PrismaClientKnownRequestError) {
+    return error.code === 'P2002';
+  }
+  return typeof error === 'object' && error !== null && (error as any).code === 'P2002';
+}
+
 // Schema de validação para criação de documento
 const createDocumentSchema = z.object({
   title: z
@@ -190,51 +197,54 @@ export async function createDocument(
       parsed.isRenewalInProgress
     );
 
-    // Persistência do documento
-    const document = await prisma.document.create({
-      data: {
-        title: parsed.title,
-        categoryId: parsed.categoryId,
-        issuingBody: parsed.issuingBody || null,
-        issueDate: new Date(parsed.issueDate),
-        expirationDate,
-        alertLeadDays: parsed.alertLeadDays,
-        status: initialStatus,
-        responsibleName: parsed.responsibleName || null,
-        responsibleEmail: parsed.responsibleEmail || null,
-        notes: parsed.notes || null,
-        attachmentUrl: req.file ? `/api/v1/uploads/${req.file.filename}` : null,
-        attachmentFilename: req.file ? req.file.originalname : null,
-        fileSizeBytes: req.file ? req.file.size : null,
-        fileMimeType: req.file ? req.file.mimetype : null,
-        isArchived: false,
-        createdById: req.user.userId,
-      },
-      include: {
-        category: true,
-        createdBy: {
-          select: { id: true, name: true, email: true, role: true },
+    // Persistência atômica do documento e trilha de auditoria (RN-008)
+    const document = await prisma.$transaction(async (tx) => {
+      const created = await tx.document.create({
+        data: {
+          title: parsed.title,
+          categoryId: parsed.categoryId,
+          issuingBody: parsed.issuingBody || null,
+          issueDate: new Date(parsed.issueDate),
+          expirationDate,
+          alertLeadDays: parsed.alertLeadDays,
+          status: initialStatus,
+          responsibleName: parsed.responsibleName || null,
+          responsibleEmail: parsed.responsibleEmail || null,
+          notes: parsed.notes || null,
+          attachmentUrl: req.file ? `/api/v1/uploads/${req.file.filename}` : null,
+          attachmentFilename: req.file ? req.file.originalname : null,
+          fileSizeBytes: req.file ? req.file.size : null,
+          fileMimeType: req.file ? req.file.mimetype : null,
+          isArchived: false,
+          createdById: req.user!.userId,
         },
-      },
-    });
+        include: {
+          category: true,
+          createdBy: {
+            select: { id: true, name: true, email: true, role: true },
+          },
+        },
+      });
 
-    // Trilha de auditoria (RN-008)
-    await prisma.auditLog.create({
-      data: {
-        documentId: document.id,
-        userId: req.user.userId,
-        userName: req.user.name,
-        action: AuditAction.CREATE,
-        diffData: {
-          title: { new: document.title },
-          categoryId: { new: document.categoryId },
-          issueDate: { new: document.issueDate },
-          expirationDate: { new: document.expirationDate },
-          status: { new: document.status },
-          alertLeadDays: { new: document.alertLeadDays },
-          attachmentFilename: { new: document.attachmentFilename },
+      await tx.auditLog.create({
+        data: {
+          documentId: created.id,
+          userId: req.user!.userId,
+          userName: req.user!.name,
+          action: AuditAction.CREATE,
+          diffData: {
+            title: { new: created.title },
+            categoryId: { new: created.categoryId },
+            issueDate: { new: created.issueDate },
+            expirationDate: { new: created.expirationDate },
+            status: { new: created.status },
+            alertLeadDays: { new: created.alertLeadDays },
+            attachmentFilename: { new: created.attachmentFilename },
+          },
         },
-      },
+      });
+
+      return created;
     });
 
     // Dispara a sincronização automática com o Google Agenda (RN-007). Nunca deve
@@ -545,10 +555,6 @@ export async function updateDocument(
     }
     if (req.file) {
       diffData.attachmentFilename = { old: existingDoc.attachmentFilename, new: req.file.originalname };
-      // Remove anexo anterior do disco se substituído
-      if (existingDoc.attachmentUrl) {
-        await deleteUploadedFile(existingDoc.attachmentUrl);
-      }
     }
 
     // Atualiza documento
@@ -591,6 +597,11 @@ export async function updateDocument(
           diffData,
         },
       });
+    }
+
+    // Remove anexo anterior do disco se substituído (somente após persistência com sucesso)
+    if (req.file && existingDoc.attachmentUrl) {
+      await deleteUploadedFile(existingDoc.attachmentUrl);
     }
 
     // Dispara a sincronização automática com o Google Agenda (RN-007). Escolha de
@@ -660,28 +671,32 @@ export async function toggleArchive(
     const newIsArchived = !document.isArchived;
     const action = newIsArchived ? AuditAction.ARCHIVE : AuditAction.UNARCHIVE;
 
-    const updatedDocument = await prisma.document.update({
-      where: { id },
-      data: { isArchived: newIsArchived },
-      include: {
-        category: true,
-        createdBy: {
-          select: { id: true, name: true, email: true, role: true },
+    const updatedDocument = await prisma.$transaction(async (tx) => {
+      const updated = await tx.document.update({
+        where: { id },
+        data: { isArchived: newIsArchived },
+        include: {
+          category: true,
+          createdBy: {
+            select: { id: true, name: true, email: true, role: true },
+          },
         },
-      },
-    });
+      });
 
-    // Registra ação de auditoria
-    await prisma.auditLog.create({
-      data: {
-        documentId: document.id,
-        userId: req.user.userId,
-        userName: req.user.name,
-        action,
-        diffData: {
-          isArchived: { old: document.isArchived, new: newIsArchived },
+      // Registra ação de auditoria
+      await tx.auditLog.create({
+        data: {
+          documentId: document.id,
+          userId: req.user!.userId,
+          userName: req.user!.name,
+          action,
+          diffData: {
+            isArchived: { old: document.isArchived, new: newIsArchived },
+          },
         },
-      },
+      });
+
+      return updated;
     });
 
     // Reflete o (des)arquivamento no Google Agenda (DOC-28, escopo do ticket:
@@ -738,39 +753,39 @@ export async function deleteDocument(
       return;
     }
 
-    // Se possuir anexo físico salvo, remove do disco
+    // Persistência atômica da auditoria e exclusão do documento (RN-008)
+    await prisma.$transaction(async (tx) => {
+      await tx.auditLog.create({
+        data: {
+          documentId: null,
+          userId: req.user!.userId,
+          userName: req.user!.name,
+          action: AuditAction.DELETE,
+          diffData: {
+            deletedDocumentId: { old: document.id },
+            title: { old: document.title },
+          },
+        },
+      });
+
+      // Hard delete no banco de dados (cascateia versions e gcal logs)
+      await tx.document.delete({
+        where: { id },
+      });
+    });
+
+    // Efeitos externos executados somente após o commit da transação:
+    // 1. Se possuir anexo físico salvo, remove do disco
     if (document.attachmentUrl) {
       await deleteUploadedFile(document.attachmentUrl);
     }
 
-    // Registra o log de auditoria de exclusão permanente antes de deletar
-    await prisma.auditLog.create({
-      data: {
-        documentId: null,
-        userId: req.user.userId,
-        userName: req.user.name,
-        action: AuditAction.DELETE,
-        diffData: {
-          deletedDocumentId: { old: document.id },
-          title: { old: document.title },
-        },
-      },
-    });
-
-    // Remove/cancela o evento no Google Agenda ANTES do hard delete: `GCalSyncLog`
-    // tem `onDelete: Cascade` para `Document`, então depois de `prisma.document.delete`
-    // o histórico de sincronização já não existe mais e `deleteDocumentEvent` não
-    // encontraria nada para remover. Falha aqui não deve impedir a exclusão.
+    // 2. Remove/cancela o evento no Google Agenda após exclusão (RN-007)
     try {
       await deleteDocumentEvent(document);
     } catch (error) {
-      console.error('Falha ao remover evento no Google Agenda antes de excluir documento:', error);
+      console.error('Falha ao remover evento no Google Agenda após excluir documento:', error);
     }
-
-    // Hard delete no banco de dados (cascateia versions e gcal logs)
-    await prisma.document.delete({
-      where: { id },
-    });
 
     res.status(200).json({
       message: 'Documento excluído permanentemente com sucesso.',
@@ -845,79 +860,133 @@ export async function renewDocument(
     const finalExpirationDate = parsed.expirationDate ? new Date(parsed.expirationDate) : null;
     const newStatus = calculateDocumentStatus(finalExpirationDate, document.alertLeadDays, false);
 
-    const versionCount = await prisma.documentVersion.count({
-      where: { documentId: document.id },
-    });
-    const versionNumber = versionCount + 1;
+    const MAX_RETRIES = 3;
+    let resultData: { updatedDocument: any; versionNumber: number } | null = null;
+    let lastError: unknown;
 
-    // 1. Arquiva snapshot da versão anterior no histórico imutável
-    await prisma.documentVersion.create({
-      data: {
-        documentId: document.id,
-        versionNumber,
-        issueDate: document.issueDate,
-        expirationDate: document.expirationDate,
-        attachmentUrl: document.attachmentUrl,
-        attachmentFilename: document.attachmentFilename,
-        notes: document.notes,
-        renewedById: req.user.userId,
-      },
-    });
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        resultData = await prisma.$transaction(async (tx) => {
+          // Calcula o próximo número de versão como max(versionNumber) + 1
+          const aggregateResult = await tx.documentVersion.aggregate({
+            where: { documentId: document.id },
+            _max: { versionNumber: true },
+          });
+          const versionNumber = (aggregateResult._max.versionNumber ?? 0) + 1;
 
-    // 2. Atualiza documento vigente com novos parâmetros
-    const updatedDocument = await prisma.document.update({
-      where: { id: document.id },
-      data: {
-        issueDate: new Date(parsed.issueDate),
-        expirationDate: finalExpirationDate,
-        status: newStatus,
-        notes: parsed.notes !== undefined && parsed.notes !== null ? parsed.notes : document.notes,
-        ...(req.file && {
-          attachmentUrl: `/api/v1/uploads/${req.file.filename}`,
-          attachmentFilename: req.file.originalname,
-          fileSizeBytes: req.file.size,
-          fileMimeType: req.file.mimetype,
-        }),
-      },
-      include: {
-        category: true,
-        createdBy: {
-          select: { id: true, name: true, email: true, role: true },
-        },
-        versions: {
-          orderBy: { versionNumber: 'desc' },
-          include: {
-            renewedBy: {
-              select: { id: true, name: true, email: true },
+          // 1. Arquiva snapshot da versão anterior no histórico imutável (RN-002)
+          await tx.documentVersion.create({
+            data: {
+              documentId: document.id,
+              versionNumber,
+              issueDate: document.issueDate,
+              expirationDate: document.expirationDate,
+              attachmentUrl: document.attachmentUrl,
+              attachmentFilename: document.attachmentFilename,
+              notes: document.notes,
+              renewedById: req.user!.userId,
             },
-          },
-        },
-      },
-    });
+          });
 
-    // 3. Registra na trilha de auditoria (action: RENEW)
-    await prisma.auditLog.create({
-      data: {
-        documentId: document.id,
-        userId: req.user.userId,
-        userName: req.user.name,
-        action: AuditAction.RENEW,
-        diffData: {
-          archivedVersionNumber: { old: null, new: versionNumber },
-          issueDate: { old: document.issueDate, new: new Date(parsed.issueDate) },
-          expirationDate: { old: document.expirationDate, new: finalExpirationDate },
-          status: { old: document.status, new: newStatus },
-          ...(req.file && {
-            attachmentFilename: { old: document.attachmentFilename, new: req.file.originalname },
-          }),
-        },
-      },
-    });
+          // 2. Atualiza documento vigente com novos parâmetros
+          const updatedDocument = await tx.document.update({
+            where: { id: document.id },
+            data: {
+              issueDate: new Date(parsed.issueDate),
+              expirationDate: finalExpirationDate,
+              status: newStatus,
+              notes: parsed.notes !== undefined && parsed.notes !== null ? parsed.notes : document.notes,
+              ...(req.file && {
+                attachmentUrl: `/api/v1/uploads/${req.file.filename}`,
+                attachmentFilename: req.file.originalname,
+                fileSizeBytes: req.file.size,
+                fileMimeType: req.file.mimetype,
+              }),
+            },
+            include: {
+              category: true,
+              createdBy: {
+                select: { id: true, name: true, email: true, role: true },
+              },
+              versions: {
+                orderBy: { versionNumber: 'desc' },
+                include: {
+                  renewedBy: {
+                    select: { id: true, name: true, email: true },
+                  },
+                },
+              },
+            },
+          });
+
+          // 3. Registra na trilha de auditoria (action: RENEW, RN-008)
+          await tx.auditLog.create({
+            data: {
+              documentId: document.id,
+              userId: req.user!.userId,
+              userName: req.user!.name,
+              action: AuditAction.RENEW,
+              diffData: {
+                archivedVersionNumber: { old: null, new: versionNumber },
+                issueDate: { old: document.issueDate, new: new Date(parsed.issueDate) },
+                expirationDate: { old: document.expirationDate, new: finalExpirationDate },
+                status: { old: document.status, new: newStatus },
+                ...(req.file && {
+                  attachmentFilename: { old: document.attachmentFilename, new: req.file.originalname },
+                }),
+              },
+            },
+          });
+
+          return { updatedDocument, versionNumber };
+        });
+
+        // Transação completada com sucesso
+        break;
+      } catch (error) {
+        lastError = error;
+        if (isPrismaP2002Error(error) && attempt < MAX_RETRIES) {
+          // Conflito de concorrência no número de versão: tenta novamente
+          continue;
+        }
+        break;
+      }
+    }
+
+    if (!resultData) {
+      if (req.file) {
+        await deleteUploadedFile(req.file.filename);
+      }
+      if (isPrismaP2002Error(lastError)) {
+        res.status(409).json({
+          error: 'VERSION_CONFLICT',
+          message: 'Conflito de concorrência ao renovar o documento. Por favor, tente novamente.',
+        });
+        return;
+      }
+      next(lastError);
+      return;
+    }
+
+    // Efeitos externos executados somente após o commit da transação:
+    // 1. Remove anexo anterior do disco se substituído por um novo upload
+    if (req.file && document.attachmentUrl) {
+      await deleteUploadedFile(document.attachmentUrl);
+    }
+
+    // 2. Dispara sincronização com Google Agenda (RN-007)
+    if (resultData.updatedDocument.expirationDate) {
+      try {
+        await syncDocumentEvent(resultData.updatedDocument, 'update');
+      } catch (error) {
+        console.error('Falha ao sincronizar evento no Google Agenda ao renovar documento:', error);
+      }
+    }
 
     res.status(200).json({
       message: 'Documento renovado com sucesso. A versão anterior foi arquivada no histórico.',
-      document: updatedDocument,
-      previousVersionNumber: versionNumber,
+      document: resultData.updatedDocument,
+      previousVersionNumber: resultData.versionNumber,
     });
   } catch (error) {
     if (req.file) {
