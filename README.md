@@ -250,7 +250,7 @@ O projeto possui cobertura de testes automatizados com Vitest:
 npm run test:unit
 
 # Executar a suíte de testes de integração E2E (a stack isolada roda o seed em
-# produção, então as senhas do seed precisam estar definidas no ambiente):
+# produção; o runner gera as senhas automaticamente quando não definidas):
 ADMIN_SEED_PASSWORD='<senha-forte>' OPERATIONAL_SEED_PASSWORD='<senha-forte>' npm run test:e2e
 ```
 

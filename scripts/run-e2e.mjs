@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { spawnSync } from 'node:child_process';
+import crypto from 'node:crypto';
 import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -93,6 +94,10 @@ async function main() {
     PORT: '3001',
     JWT_SECRET: `docsobs-e2e-${process.pid}-local-only`,
     RUN_SEED: 'true',
+    ADMIN_SEED_PASSWORD:
+      process.env.ADMIN_SEED_PASSWORD || crypto.randomBytes(18).toString('base64url'),
+    OPERATIONAL_SEED_PASSWORD:
+      process.env.OPERATIONAL_SEED_PASSWORD || crypto.randomBytes(18).toString('base64url'),
   };
   const compose = ['compose', '-p', projectName];
   let attemptedUp = false;
