@@ -49,16 +49,18 @@ export async function getCalendarEvents(
       expirationDate: { not: null },
     };
 
+    // expirationDate é data civil em meia-noite UTC (DOC-27): os limites do período
+    // também são calculados em UTC para não deslocar o dia conforme o fuso do processo.
     if (query.year !== undefined && query.month !== undefined) {
-      const startOfMonth = new Date(query.year, query.month - 1, 1, 0, 0, 0, 0);
-      const endOfMonth = new Date(query.year, query.month, 0, 23, 59, 59, 999);
+      const startOfMonth = new Date(Date.UTC(query.year, query.month - 1, 1, 0, 0, 0, 0));
+      const endOfMonth = new Date(Date.UTC(query.year, query.month, 0, 23, 59, 59, 999));
       where.expirationDate = {
         gte: startOfMonth,
         lte: endOfMonth,
       };
     } else if (query.year !== undefined) {
-      const startOfYear = new Date(query.year, 0, 1, 0, 0, 0, 0);
-      const endOfYear = new Date(query.year, 11, 31, 23, 59, 59, 999);
+      const startOfYear = new Date(Date.UTC(query.year, 0, 1, 0, 0, 0, 0));
+      const endOfYear = new Date(Date.UTC(query.year, 11, 31, 23, 59, 59, 999));
       where.expirationDate = {
         gte: startOfYear,
         lte: endOfYear,

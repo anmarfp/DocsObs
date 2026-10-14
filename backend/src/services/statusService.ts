@@ -1,7 +1,12 @@
 import { DocumentStatus } from '@prisma/client';
+import { getBusinessToday, MS_PER_DAY } from '../utils/date.js';
 
 /**
- * Normaliza qualquer formato de data (Date, string YYYY-MM-DD ou ISO) para meia-noite (00:00:00.000) local.
+ * Normaliza qualquer formato de data (Date, string YYYY-MM-DD ou ISO) para a data civil
+ * representada como meia-noite UTC (00:00:00.000Z).
+ *
+ * Datas de vencimento são gravadas como meia-noite UTC (DOC-27), por isso a leitura usa
+ * getters UTC — independente do fuso do processo.
  */
 export function normalizeDateToMidnight(dateInput: Date | string | null | undefined): Date | null {
   if (!dateInput) return null;
@@ -16,17 +21,17 @@ export function normalizeDateToMidnight(dateInput: Date | string | null | undefi
       const year = parseInt(ymdMatch[1], 10);
       const month = parseInt(ymdMatch[2], 10) - 1;
       const day = parseInt(ymdMatch[3], 10);
-      return new Date(year, month, day, 0, 0, 0, 0);
+      return new Date(Date.UTC(year, month, day));
     }
 
     const parsed = new Date(trimmed);
     if (isNaN(parsed.getTime())) return null;
-    return new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate(), 0, 0, 0, 0);
+    return new Date(Date.UTC(parsed.getUTCFullYear(), parsed.getUTCMonth(), parsed.getUTCDate()));
   }
 
   if (dateInput instanceof Date) {
     if (isNaN(dateInput.getTime())) return null;
-    return new Date(dateInput.getFullYear(), dateInput.getMonth(), dateInput.getDate(), 0, 0, 0, 0);
+    return new Date(Date.UTC(dateInput.getUTCFullYear(), dateInput.getUTCMonth(), dateInput.getUTCDate()));
   }
 
   return null;
@@ -34,6 +39,7 @@ export function normalizeDateToMidnight(dateInput: Date | string | null | undefi
 
 /**
  * Calcula a diferença em dias inteiros entre a data de vencimento e hoje.
+ * "Hoje" é a data civil de `baseDate` (instante) no fuso de negócio `APP_TIMEZONE`.
  * Retorna número negativo se já venceu.
  */
 export function getDaysUntilExpiration(
@@ -43,9 +49,9 @@ export function getDaysUntilExpiration(
   const expMidnight = normalizeDateToMidnight(expirationDate);
   if (!expMidnight) return null;
 
-  const todayMidnight = normalizeDateToMidnight(baseDate)!;
+  const todayMidnight = getBusinessToday(baseDate);
   const diffTime = expMidnight.getTime() - todayMidnight.getTime();
-  return Math.round(diffTime / (1000 * 60 * 60 * 24));
+  return Math.round(diffTime / MS_PER_DAY);
 }
 
 /**
@@ -55,6 +61,9 @@ export function getDaysUntilExpiration(
  * 3. EXPIRED se expirationDate for anterior a hoje (meia-noite).
  * 4. CRITICAL se a diferença em dias for <= alertLeadDays.
  * 5. REGULAR caso contrário.
+ *
+ * `baseDate` é o instante de referência ("agora"); o dia de hoje é a sua data civil
+ * no fuso de negócio `APP_TIMEZONE` (padrão America/Sao_Paulo).
  */
 export function calculateDocumentStatus(
   expirationDate: Date | string | null | undefined,
@@ -74,7 +83,7 @@ export function calculateDocumentStatus(
     return DocumentStatus.RENEWAL_IN_PROGRESS;
   }
 
-  const todayMidnight = normalizeDateToMidnight(baseDate)!;
+  const todayMidnight = getBusinessToday(baseDate);
 
   // 3. Data de vencimento anterior ao dia de hoje (meia-noite)
   if (expMidnight.getTime() < todayMidnight.getTime()) {
@@ -82,7 +91,7 @@ export function calculateDocumentStatus(
   }
 
   // 4. Antecedência crítica de alerta
-  const diffDays = Math.round((expMidnight.getTime() - todayMidnight.getTime()) / (1000 * 60 * 60 * 24));
+  const diffDays = Math.round((expMidnight.getTime() - todayMidnight.getTime()) / MS_PER_DAY);
 
   if (diffDays <= alertLeadDays) {
     return DocumentStatus.CRITICAL;

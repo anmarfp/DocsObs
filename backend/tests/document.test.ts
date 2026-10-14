@@ -106,7 +106,8 @@ describe('Suíte de Testes Automatizados - Módulo de Documentos, Matriz de Core
   // 1. MATRIZ DE CORES E STATUS (RN-001) - TESTES UNITÁRIOS E EDGE CASES
   // =========================================================================
   describe('1. Matriz de Cores e Cálculo de Status (RN-001)', () => {
-    const fixedToday = new Date(2026, 7, 26, 12, 0, 0); // 2026-08-26 12:00:00
+    // Instante fixo: 2026-08-26 12:00 UTC (09:00 em America/Sao_Paulo) — independe do fuso do host (DOC-27)
+    const fixedToday = new Date('2026-08-26T12:00:00.000Z');
 
     describe('calculateDocumentStatus', () => {
       it('deve retornar INDETERMINATE quando expirationDate for null, undefined, vazia ou apenas espaços', () => {
@@ -180,17 +181,20 @@ describe('Suíte de Testes Automatizados - Módulo de Documentos, Matriz de Core
         expect(getDaysUntilExpiration('2026-08-01', fixedToday)).toBe(-25);
       });
 
-      it('deve normalizar strings YYYY-MM-DD, ISO e objetos Date para meia-noite', () => {
+      it('deve normalizar strings YYYY-MM-DD, ISO e objetos Date para a data civil em meia-noite UTC', () => {
         const fromYmd = normalizeDateToMidnight('2026-08-26');
-        expect(fromYmd).toEqual(new Date(2026, 7, 26, 0, 0, 0, 0));
+        expect(fromYmd).toEqual(new Date('2026-08-26T00:00:00.000Z'));
 
         const fromIso = normalizeDateToMidnight('2026-08-26T23:59:59.999Z');
         expect(fromIso).not.toBeNull();
-        expect(fromIso?.getHours()).toBe(0);
-        expect(fromIso?.getMinutes()).toBe(0);
+        expect(fromIso).toEqual(new Date('2026-08-26T00:00:00.000Z'));
 
-        const fromDate = normalizeDateToMidnight(new Date(2026, 7, 26, 18, 45));
-        expect(fromDate).toEqual(new Date(2026, 7, 26, 0, 0, 0, 0));
+        const fromDate = normalizeDateToMidnight(new Date('2026-08-26T18:45:00.000Z'));
+        expect(fromDate).toEqual(new Date('2026-08-26T00:00:00.000Z'));
+
+        // Data gravada como meia-noite UTC mantém o mesmo dia civil em qualquer fuso do processo
+        const stored = normalizeDateToMidnight(new Date('2026-08-30T00:00:00.000Z'));
+        expect(stored).toEqual(new Date('2026-08-30T00:00:00.000Z'));
 
         expect(normalizeDateToMidnight('data-invalida')).toBeNull();
         expect(normalizeDateToMidnight(new Date('invalida'))).toBeNull();
