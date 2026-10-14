@@ -1,0 +1,76 @@
+{
+  "schema": "aihaus.evidence.v1",
+  "verdict": "PASS",
+  "commit": "b5a6708",
+  "acceptance": [
+    {
+      "criterion": "normalizeDateToMidnight trata datas como civis em UTC (getUTC*/Date.UTC) e \"hoje\" e a data civil no fuso de negocio",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npx vitest run tests/status-timezone.test.ts (TZ=America/Sao_Paulo|UTC|Asia/Tokyo)",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "criterion": "Documento que vence hoje (data civil) e CRITICAL, nao EXPIRED, com o processo em UTC-3 e em UTC",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npx vitest run (TZ=America/Sao_Paulo e TZ=UTC) - status-timezone.test.ts case table",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "criterion": "Limites de mes do calendario e janela de proximos vencimentos do dashboard usam a mesma convencao UTC civil",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npx vitest run tests/status-timezone.test.ts (calendar 2026-09 bounds + dashboard window)",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "criterion": "notification-gcal.test.ts congela o relogio com vi.setSystemTime e a suite backend fica verde",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npx vitest run (backend, 200/200, 3 TZs)",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "criterion": "Teste de regressao na fronteira da meia-noite UTC falha no codigo antigo e passa no novo",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "ran",
+          "source": "tool",
+          "command": "executor: codigo antigo + testes novos -> 11 falhas (Sao_Paulo) / 4 (UTC); codigo novo -> 0",
+          "exit_code": 0
+        },
+        {
+          "rung": "written",
+          "detail": "Reproducao do executor; orquestrador confirmou que os testes exercitam a fronteira 2026-08-31T01:00Z/03:30Z da case table."
+        }
+      ]
+    }
+  ]
+}
