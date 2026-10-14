@@ -1,0 +1,93 @@
+{
+  "schema": "aihaus.evidence.v1",
+  "verdict": "PASS",
+  "commit": "86bc600",
+  "acceptance": [
+    {
+      "criterion": "docker compose up com variaveis padrao nao cria nenhum usuario (RUN_SEED default false)",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "ran",
+          "source": "tool",
+          "command": "docker compose -p doc32-config-check config (executor): RUN_SEED=false por padrao",
+          "exit_code": 0
+        },
+        {
+          "rung": "written",
+          "detail": "Orquestrador conferiu docker-compose.yml: RUN_SEED ${RUN_SEED:-false}; entrypoint so semeia com RUN_SEED=true"
+        }
+      ]
+    },
+    {
+      "criterion": "Com NODE_ENV=production e RUN_SEED=true sem senhas definidas, o seed/boot falha com mensagem explicando o que configurar",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npx vitest run tests/seed.test.ts (validateSeedEnv/assertSeedEnv) em checkout limpo 86bc600",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "criterion": "Usuarios e documentos demo nao sao criados em producao",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npm run test:e2e (stack NODE_ENV=production, RUN_SEED=true): seed sem usuarios demo; logins admin/operacional ok",
+          "exit_code": 0
+        },
+        {
+          "rung": "written",
+          "detail": "Suite E2E 18/19; a unica falha (TC-E2E-05:44) e pre-existente e nao relacionada ao seed"
+        }
+      ]
+    },
+    {
+      "criterion": "Botao de preenchimento rapido do login nao aparece no build de producao",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "frontend npm run build && grep -rl 'Admin123|Operacional123|Seed123' dist (vazio) + vitest auth.test.tsx",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "criterion": "README nao publica senhas padrao e documenta como semear",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "git grep -n 'Admin123|Operacional123|Seed123' (so a assercao negativa em backend/tests/seed.test.ts:18)",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "criterion": "Testes backend e frontend verdes",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npm run test:unit (checkout limpo 86bc600)",
+          "exit_code": 0
+        }
+      ]
+    }
+  ]
+}
