@@ -1,0 +1,84 @@
+{
+  "schema": "aihaus.evidence.v1",
+  "verdict": "PASS",
+  "commit": "69ff253",
+  "acceptance": [
+    {
+      "criterion": "Renovacao, criacao, arquivamento e exclusao rodam em prisma.$transaction; efeitos externos (disco, Google) so apos commit",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npx vitest run tests/document-transactions.test.ts (checkout limpo 69ff253)",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "criterion": "Falha simulada em etapa intermediaria da renovacao nao deixa versao orfa nem documento parcialmente atualizado",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npx vitest run tests/document-transactions.test.ts (renewal: update/audit throws)",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "criterion": "Duas renovacoes concorrentes nao produzem versionNumber duplicado (@@unique([documentId, versionNumber]) + conflito tratado)",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npx vitest run (P2002 retry/409) + postgres descartavel: INSERT duplicado rejeitado por document_versions_document_id_version_number_key",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "criterion": "Falha no audit log na criacao nao deixa documento commitado apontando para arquivo apagado",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npx vitest run tests/document-transactions.test.ts (create: auditLog throws)",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "criterion": "Testes cobrindo os tres cenarios",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npm run test:unit && npm run test:e2e (69ff253)",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "criterion": "ARCHITECTURE.md descreve o comportamento real",
+      "status": "satisfied",
+      "executable": false,
+      "evidence": [
+        {
+          "rung": "written",
+          "artifact": "docs/ARCHITECTURE.md",
+          "detail": "Fluxos de criacao/renovacao/exclusao revisados pelo orquestrador contra documentController.ts em 69ff253"
+        }
+      ]
+    }
+  ]
+}
