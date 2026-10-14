@@ -302,7 +302,7 @@ SENÃO:
 | Autenticação e Consulta de Perfil | `POST /auth/login`, `GET /auth/me` | ✅ Permitido | ✅ Permitido |
 | Listar e Filtrar Documentos | `GET /documents` | ✅ Permitido (com arquivados) | ✅ Permitido (sem arquivados) |
 | Criar e Editar Documentos | `POST /documents`, `PUT /documents/:id` | ✅ Permitido | ✅ Permitido |
-| Download de Anexos | `GET /documents/:id/attachment` | ✅ Permitido | ✅ Permitido |
+| Download de Anexos | `GET /uploads/:arquivo` | ✅ Permitido | ✅ Permitido |
 | Renovar Documento | `POST /documents/:id/renew` | ✅ Permitido | ✅ Permitido |
 | Arquivar Documento (Soft Delete) | `PATCH /documents/:id/archive` | ✅ Permitido | ✅ Permitido |
 | Excluir Permanentemente (Hard Delete) | `DELETE /documents/:id` | ✅ Permitido | ❌ 403 Forbidden |
@@ -340,14 +340,27 @@ sequenceDiagram
     end
     User->>UI: Preenche formulário + Anexa PDF/PNG/JPG (<=10MB) + Submete
     UI->>API: POST /api/v1/documents (multipart/form-data com Bearer JWT)
-    API->>API: Valida MIME Type, Magic Bytes e Tamanho do arquivo
-    API->>Storage: Salva arquivo físico em /app/uploads
+    API->>API: multer (memória): limite de tamanho + pré-filtro do MIME declarado
+    API->>API: Detecta o tipo pelos magic bytes e exige que confira com o MIME declarado
+    API->>Storage: Grava em /app/uploads com nome aleatório e extensão do tipo detectado
     API->>API: Calcula Status visual inicial (RN-001)
     API->>DB: Inicia transação: INSERT INTO documents & INSERT INTO audit_logs (Action: 'CREATE')
     DB-->>API: Transação confirmada
     API-->>UI: Retorna 201 Created com objeto do documento
     UI-->>User: Exibe toast de sucesso e atualiza tabela/dashboard em tempo real
 ```
+
+### 6.1.1 Validação e Entrega de Anexos (DOC-34)
+
+Implementação em `backend/src/services/storageService.ts` e `backend/src/app.ts`; vale para `POST /documents`, `PUT /documents/:id` e `POST /documents/:id/renew` (`upload.single('attachment')`).
+
+1. **Recebimento**: o multer usa `memoryStorage` com o limite `MAX_FILE_SIZE_BYTES` (padrão 10 MB; excedido → `400 FILE_TOO_LARGE`). Nada é gravado em disco antes da validação, então um upload rejeitado não deixa arquivo no diretório de uploads.
+2. **Pré-filtro**: o `Content-Type` declarado pelo cliente precisa ser `application/pdf`, `image/png`, `image/jpeg` ou `image/jpg` (alias de JPEG). Caso contrário → `400 INVALID_FILE_TYPE`.
+3. **Detecção real (magic bytes)**: o servidor lê a assinatura do conteúdo — PDF `%PDF-` (`25 50 44 46 2D`), PNG `89 50 4E 47 0D 0A 1A 0A`, JPEG `FF D8 FF`. Arquivo vazio, conteúdo sem assinatura permitida ou tipo detectado diferente do declarado (ex.: PNG enviado como `image/jpeg`, HTML enviado como `application/pdf`) → `400 INVALID_FILE_TYPE`.
+4. **Gravação**: o nome em disco é `<timestamp>-<hash aleatório><ext>`, com `ext` derivada **somente** do tipo detectado (`.pdf`, `.png`, `.jpg`). O `originalname` do cliente é guardado apenas como metadado (`attachment_filename`) e `file_mime_type` recebe o tipo detectado.
+5. **Entrega** (`GET /api/v1/uploads/:arquivo`, autenticado): só extensões da allow-list (`.pdf`, `.png`, `.jpg` e `.jpeg` legado) são servidas — demais → `404`; diretórios e dotfiles não são servidos. Toda resposta traz `Content-Type` fixo pela extensão, `X-Content-Type-Options: nosniff` e `Content-Disposition: attachment; filename="<nome gerado>"`.
+6. **Cabeçalhos globais**: `helmet()` em toda a API, com CSP restritiva (`default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'; sandbox`) — a API só devolve JSON/arquivos; o SPA é servido pelo Nginx. `Cross-Origin-Resource-Policy` fica `same-origin`, pois o frontend acessa a API pelo mesmo origin (proxy do Vite/Nginx).
+7. **Frontend**: a visualização/baixa usa `Blob` cujo tipo vem de uma allow-list (`application/pdf`, `image/png`, `image/jpeg`) aplicada ao `Content-Type` da resposta; qualquer outro tipo vira `application/octet-stream` (baixado, nunca renderizado no origin da aplicação).
 
 ### 6.2 Renovação de Documento com Histórico de Versão (RN-002 & RN-008)
 
