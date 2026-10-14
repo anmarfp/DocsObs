@@ -1,0 +1,72 @@
+{
+  "schema": "aihaus.evidence.v1",
+  "verdict": "PASS",
+  "commit": "edfc781",
+  "acceptance": [
+    {
+      "criterion": "Backend com NODE_ENV=production sem JWT_SECRET (ou <32 chars) aborta no boot com mensagem nomeando a variavel",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "env -u JWT_SECRET NODE_ENV=production DATABASE_URL=... node dist/src/server.js (exit 1 esperado; confirmado) + npx vitest run tests/env.test.ts",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "criterion": "Nenhuma string literal de segredo em backend/src nem docker-compose.yml",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "git grep -n -i 'fallback-secret|change_in_production' -- backend docker-compose.yml (vazio) + docker compose config sem JWT_SECRET falha",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "criterion": "Variaveis de ambiente lidas de um unico modulo tipado backend/src/config/env.ts (Zod)",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "git grep -n process.env backend/src (somente backend/src/config/env.ts)",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "criterion": "Teste cobrindo o boot que falha",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npx vitest run tests/env.test.ts (boot spawn: exit 1, stderr com JWT_SECRET, sem stack)",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "criterion": "Suites verdes",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npm run test:unit && npm run test:e2e (checkout limpo edfc781)",
+          "exit_code": 0
+        }
+      ]
+    }
+  ]
+}
