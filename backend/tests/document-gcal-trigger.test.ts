@@ -300,7 +300,7 @@ describe('DOC-28 (4/5) - Gatilho automático de sincronização com o Google Age
   // DELETE /api/v1/documents/:id (deleteDocument - hard delete)
   // =========================================================================
   describe('deleteDocument', () => {
-    it('chama deleteDocumentEvent APÓS prisma.document.delete (efeito externo após commit da transação)', async () => {
+    it('chama deleteDocumentEvent ANTES de prisma.document.delete (ordem importa por causa do cascade em GCalSyncLog)', async () => {
       const callOrder: string[] = [];
 
       (prisma.document.findUnique as any).mockResolvedValue(sampleDoc);
@@ -319,7 +319,7 @@ describe('DOC-28 (4/5) - Gatilho automático de sincronização com o Google Age
         .set('Authorization', `Bearer ${adminToken}`);
 
       expect(res.status).toBe(200);
-      expect(callOrder).toEqual(['document.delete', 'deleteDocumentEvent']);
+      expect(callOrder).toEqual(['deleteDocumentEvent', 'document.delete']);
       expect(deleteDocumentEvent).toHaveBeenCalledWith(
         expect.objectContaining({ id: sampleDoc.id, createdById: sampleDoc.createdById })
       );

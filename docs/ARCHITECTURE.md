@@ -395,8 +395,6 @@ sequenceDiagram
         end
     end
     alt Transação confirmada com sucesso
-        API->>Storage: Efeito externo pós-commit: remove anexo antigo se substituído
-        API->>API: Efeito externo pós-commit: sincronização Google Agenda (RN-007, não bloqueante)
         API-->>UI: Retorna documento atualizado com versão incrementada (200 OK)
     else Esgotou 3 tentativas por conflito (P2002)
         API->>Storage: Remove novo arquivo recém-gravado em disco (preserva anexo original)

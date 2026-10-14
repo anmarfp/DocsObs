@@ -5,6 +5,7 @@ import fs from 'fs';
 import { Role, DocumentStatus, AuditAction, NotificationMode, SyncStatus } from '@prisma/client';
 import { app } from '../src/app.js';
 import { generateToken } from '../src/utils/jwt.js';
+import * as storageService from '../src/services/storageService.js';
 import { UPLOADS_DIR } from '../src/services/storageService.js';
 import { syncDocumentEvent, deleteDocumentEvent } from '../src/services/gcalService.js';
 import { prisma } from '../src/lib/prisma.js';
@@ -142,6 +143,8 @@ describe('DOC-37: Transações nas escritas de documentos e versão única por d
     mockTx.documentVersion.create.mockResolvedValue({ id: 'ver-1' });
     mockTx.document.update.mockRejectedValue(new Error('Erro simulado ao atualizar documento na transação'));
 
+    const deleteSpy = vi.spyOn(storageService, 'deleteUploadedFile');
+
     const res = await request(app)
       .post(`/api/v1/documents/${sampleDoc.id}/renew`)
       .set('Authorization', `Bearer ${adminToken}`)
@@ -155,8 +158,10 @@ describe('DOC-37: Transações nas escritas de documentos e versão única por d
     // 1. Resposta não é 2xx
     expect(res.status).toBe(500);
 
-    // 2. Anexo antigo NÃO foi deletado do disco
+    // 2. Anexo antigo NÃO foi deletado do disco e deleteUploadedFile só removeu o novo arquivo
     expect(fs.existsSync(oldFilePath)).toBe(true);
+    expect(deleteSpy).not.toHaveBeenCalledWith(`/api/v1/uploads/${oldFileName}`);
+    expect(deleteSpy).toHaveBeenCalledWith(expect.stringMatching(/\.pdf$/));
 
     // 3. Nenhum sync com o Google Agenda foi chamado
     expect(syncDocumentEvent).not.toHaveBeenCalled();
@@ -188,6 +193,8 @@ describe('DOC-37: Transações nas escritas de documentos e versão única por d
     });
     mockTx.auditLog.create.mockRejectedValue(new Error('Erro simulado ao gravar auditLog na renovação'));
 
+    const deleteSpy = vi.spyOn(storageService, 'deleteUploadedFile');
+
     const res = await request(app)
       .post(`/api/v1/documents/${sampleDoc.id}/renew`)
       .set('Authorization', `Bearer ${adminToken}`)
@@ -200,6 +207,8 @@ describe('DOC-37: Transações nas escritas de documentos e versão única por d
 
     expect(res.status).toBe(500);
     expect(fs.existsSync(oldFilePath)).toBe(true);
+    expect(deleteSpy).not.toHaveBeenCalledWith(`/api/v1/uploads/${oldFileName}`);
+    expect(deleteSpy).toHaveBeenCalledWith(expect.stringMatching(/\.pdf$/));
     expect(syncDocumentEvent).not.toHaveBeenCalled();
 
     if (fs.existsSync(oldFilePath)) fs.unlinkSync(oldFilePath);
@@ -208,7 +217,7 @@ describe('DOC-37: Transações nas escritas de documentos e versão única por d
   // =========================================================================
   // Caso 3: renewal: first attempt throws P2002 then succeeds
   // =========================================================================
-  it('renewal: first attempt throws P2002 then succeeds -> 2xx, versionNumber from second attempt, exactly one Google sync after commit', async () => {
+  it('renewal: first attempt throws P2002 then succeeds -> 2xx, versionNumber from second attempt, no Google sync', async () => {
     const mockTx = getMockTx();
     (prisma.document.findUnique as any).mockResolvedValue(sampleDoc);
 
@@ -242,11 +251,7 @@ describe('DOC-37: Transações nas escritas de documentos e versão única por d
     expect(res.status).toBe(200);
     expect(attempts).toBe(2);
     expect(res.body.previousVersionNumber).toBe(3); // max(2) + 1
-    expect(syncDocumentEvent).toHaveBeenCalledTimes(1);
-    expect(syncDocumentEvent).toHaveBeenCalledWith(
-      expect.objectContaining({ id: sampleDoc.id }),
-      'update'
-    );
+    expect(syncDocumentEvent).not.toHaveBeenCalled();
   });
 
   // =========================================================================
@@ -262,6 +267,8 @@ describe('DOC-37: Transações nas escritas de documentos e versão única por d
       attachmentUrl: `/api/v1/uploads/${oldFileName}`,
       attachmentFilename: 'antigo.pdf',
     });
+
+    const deleteSpy = vi.spyOn(storageService, 'deleteUploadedFile');
 
     let attempts = 0;
     (prisma.$transaction as any).mockImplementation(async () => {
@@ -286,6 +293,8 @@ describe('DOC-37: Transações nas escritas de documentos e versão única por d
     expect(res.body.error).toBe('VERSION_CONFLICT');
     expect(res.body.message).toContain('Conflito de concorrência ao renovar');
     expect(fs.existsSync(oldFilePath)).toBe(true);
+    expect(deleteSpy).not.toHaveBeenCalledWith(`/api/v1/uploads/${oldFileName}`);
+    expect(deleteSpy).toHaveBeenCalledWith(expect.stringMatching(/\.pdf$/));
     expect(syncDocumentEvent).not.toHaveBeenCalled();
 
     if (fs.existsSync(oldFilePath)) fs.unlinkSync(oldFilePath);
@@ -294,15 +303,16 @@ describe('DOC-37: Transações nas escritas de documentos e versão única por d
   // =========================================================================
   // Caso 5: renewal success
   // =========================================================================
-  it('renewal success -> version number = max+1, old attachment deleted only after commit, Google sync after commit', async () => {
+  it('renewal success -> version number = max+1, previous attachment preserved (not deleted), no Google sync', async () => {
     const mockTx = getMockTx();
     const oldFileName = `old-renew-success-${Date.now()}.pdf`;
     const oldFilePath = path.resolve(UPLOADS_DIR, oldFileName);
     fs.writeFileSync(oldFilePath, 'conteudo antigo para sucesso');
 
+    const previousAttachmentUrl = `/api/v1/uploads/${oldFileName}`;
     (prisma.document.findUnique as any).mockResolvedValue({
       ...sampleDoc,
-      attachmentUrl: `/api/v1/uploads/${oldFileName}`,
+      attachmentUrl: previousAttachmentUrl,
       attachmentFilename: 'antigo.pdf',
     });
 
@@ -316,18 +326,14 @@ describe('DOC-37: Transações nas escritas de documentos e versão única por d
     }));
     mockTx.auditLog.create.mockResolvedValue({ id: 'audit-renew-success' });
 
+    const deleteSpy = vi.spyOn(storageService, 'deleteUploadedFile');
+
     const timeline: string[] = [];
     (prisma.$transaction as any).mockImplementation(async (cb: any) => {
       const result = await cb(mockTx);
       timeline.push('tx-committed');
-      // No momento do commit, o arquivo antigo AINDA não deve ter sido removido
       expect(fs.existsSync(oldFilePath)).toBe(true);
       return result;
-    });
-
-    (syncDocumentEvent as any).mockImplementation(async () => {
-      timeline.push('google-synced');
-      return { status: SyncStatus.SYNCED };
     });
 
     const res = await request(app)
@@ -342,12 +348,18 @@ describe('DOC-37: Transações nas escritas de documentos e versão única por d
 
     expect(res.status).toBe(200);
     expect(res.body.previousVersionNumber).toBe(6); // 5 + 1 = 6
-    expect(timeline).toEqual(['tx-committed', 'google-synced']);
+    expect(timeline).toEqual(['tx-committed']);
 
-    // O anexo antigo foi deletado após o commit
-    expect(fs.existsSync(oldFilePath)).toBe(false);
+    // O anexo anterior NÃO foi deletado do disco e deleteUploadedFile NÃO foi chamado para ele (RN-002)
+    expect(deleteSpy).not.toHaveBeenCalledWith(previousAttachmentUrl);
+    expect(deleteSpy).not.toHaveBeenCalledWith(oldFileName);
+    expect(fs.existsSync(oldFilePath)).toBe(true);
 
-    // Limpa novo arquivo gerado
+    // Sync com Google Agenda não é disparado na renovação (R3)
+    expect(syncDocumentEvent).not.toHaveBeenCalled();
+
+    // Limpeza
+    if (fs.existsSync(oldFilePath)) fs.unlinkSync(oldFilePath);
     if (res.body.document?.attachmentUrl) {
       const generatedFile = path.resolve(UPLOADS_DIR, path.basename(res.body.document.attachmentUrl));
       if (fs.existsSync(generatedFile)) fs.unlinkSync(generatedFile);
@@ -475,7 +487,7 @@ describe('DOC-37: Transações nas escritas de documentos e versão única por d
   // =========================================================================
   // Caso 9: delete: delete throws
   // =========================================================================
-  it('delete: delete throws -> transaction rejected, no audit-only orphan, attachment file not deleted, no Google delete sync', async () => {
+  it('delete: delete throws -> transaction rejected, no audit-only orphan, attachment file not deleted, response is 5xx', async () => {
     const mockTx = getMockTx();
     const testFile = `to-delete-fail-${Date.now()}.pdf`;
     const testFilePath = path.resolve(UPLOADS_DIR, testFile);
@@ -493,13 +505,19 @@ describe('DOC-37: Transações nas escritas de documentos e versão única por d
       .delete(`/api/v1/documents/${sampleDoc.id}`)
       .set('Authorization', `Bearer ${adminToken}`);
 
+    // 1. Resposta 5xx
     expect(res.status).toBe(500);
 
-    // Arquivo não pode ser deletado quando a transação falha
+    // 2. Transação tentou executar e foi rejeitada
+    expect(mockTx.document.delete).toHaveBeenCalledWith({ where: { id: sampleDoc.id } });
+
+    // 3. Arquivo não pode ser deletado quando a transação falha
     expect(fs.existsSync(testFilePath)).toBe(true);
 
-    // Sync com Google não deve ser disparado
-    expect(deleteDocumentEvent).not.toHaveBeenCalled();
+    // 4. deleteDocumentEvent ter sido chamado antes da transação é o comportamento esperado
+    expect(deleteDocumentEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ id: sampleDoc.id })
+    );
 
     if (fs.existsSync(testFilePath)) fs.unlinkSync(testFilePath);
   });
@@ -507,7 +525,7 @@ describe('DOC-37: Transações nas escritas de documentos e versão única por d
   // =========================================================================
   // Caso 10: delete success
   // =========================================================================
-  it('delete success -> attachment file deleted only after commit, Google delete sync after commit', async () => {
+  it('delete success -> deleteDocumentEvent called before $transaction, attachment file deleted only after commit', async () => {
     const mockTx = getMockTx();
     const testFile = `to-delete-success-${Date.now()}.pdf`;
     const testFilePath = path.resolve(UPLOADS_DIR, testFile);
@@ -519,21 +537,21 @@ describe('DOC-37: Transações nas escritas de documentos e versão única por d
     });
 
     const timeline: string[] = [];
+    (deleteDocumentEvent as any).mockImplementation(async () => {
+      timeline.push('gcal-delete');
+      return { status: SyncStatus.DELETED };
+    });
+
     (prisma.$transaction as any).mockImplementation(async (cb: any) => {
-      const result = await cb(mockTx);
       timeline.push('commit');
       // No momento do commit, o arquivo físico ainda não foi deletado
       expect(fs.existsSync(testFilePath)).toBe(true);
+      const result = await cb(mockTx);
       return result;
     });
 
     mockTx.auditLog.create.mockResolvedValue({ id: 'audit-del-success' });
     mockTx.document.delete.mockResolvedValue(sampleDoc);
-
-    (deleteDocumentEvent as any).mockImplementation(async () => {
-      timeline.push('gcal-delete');
-      return { status: SyncStatus.DELETED };
-    });
 
     const res = await request(app)
       .delete(`/api/v1/documents/${sampleDoc.id}`)
@@ -541,7 +559,12 @@ describe('DOC-37: Transações nas escritas de documentos e versão única por d
 
     expect(res.status).toBe(200);
     expect(res.body.message).toBe('Documento excluído permanentemente com sucesso.');
-    expect(timeline).toEqual(['commit', 'gcal-delete']);
+
+    // deleteDocumentEvent foi chamado ANTES de $transaction
+    expect((deleteDocumentEvent as any).mock.invocationCallOrder[0]).toBeLessThan(
+      (prisma.$transaction as any).mock.invocationCallOrder[0]
+    );
+    expect(timeline).toEqual(['gcal-delete', 'commit']);
 
     // Arquivo foi removido do disco após o commit
     expect(fs.existsSync(testFilePath)).toBe(false);

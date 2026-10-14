@@ -753,6 +753,16 @@ export async function deleteDocument(
       return;
     }
 
+    // Remove/cancela o evento no Google Agenda ANTES do hard delete: `GCalSyncLog`
+    // tem `onDelete: Cascade` para `Document`, então depois de `prisma.document.delete`
+    // o histórico de sincronização já não existe mais e `deleteDocumentEvent` não
+    // encontraria nada para remover. Falha aqui não deve impedir a exclusão.
+    try {
+      await deleteDocumentEvent(document);
+    } catch (error) {
+      console.error('Falha ao remover evento no Google Agenda antes de excluir documento:', error);
+    }
+
     // Persistência atômica da auditoria e exclusão do documento (RN-008)
     await prisma.$transaction(async (tx) => {
       await tx.auditLog.create({
@@ -775,16 +785,9 @@ export async function deleteDocument(
     });
 
     // Efeitos externos executados somente após o commit da transação:
-    // 1. Se possuir anexo físico salvo, remove do disco
+    // Se possuir anexo físico salvo, remove do disco
     if (document.attachmentUrl) {
       await deleteUploadedFile(document.attachmentUrl);
-    }
-
-    // 2. Remove/cancela o evento no Google Agenda após exclusão (RN-007)
-    try {
-      await deleteDocumentEvent(document);
-    } catch (error) {
-      console.error('Falha ao remover evento no Google Agenda após excluir documento:', error);
     }
 
     res.status(200).json({
@@ -966,21 +969,6 @@ export async function renewDocument(
       }
       next(lastError);
       return;
-    }
-
-    // Efeitos externos executados somente após o commit da transação:
-    // 1. Remove anexo anterior do disco se substituído por um novo upload
-    if (req.file && document.attachmentUrl) {
-      await deleteUploadedFile(document.attachmentUrl);
-    }
-
-    // 2. Dispara sincronização com Google Agenda (RN-007)
-    if (resultData.updatedDocument.expirationDate) {
-      try {
-        await syncDocumentEvent(resultData.updatedDocument, 'update');
-      } catch (error) {
-        console.error('Falha ao sincronizar evento no Google Agenda ao renovar documento:', error);
-      }
     }
 
     res.status(200).json({
