@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import request from 'supertest';
 import { DocumentStatus, NotificationMode, Role, SyncStatus } from '@prisma/client';
 
@@ -172,6 +172,17 @@ describe('Passo 8 - Notificações, cron e Google Calendar', () => {
 
     beforeAll(async () => {
       cronService = await import('../src/services/cronService.js');
+    });
+
+    // Congela o relógio em `today` (DOC-27): `recalculateAllStatuses()` sem baseDate usa o
+    // relógio real; sem isso o teste depende da data em que a suíte roda.
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(today);
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
     });
 
     it('recalcula documentos ativos, preserva estados manuais e dispara alertas pertinentes', async () => {

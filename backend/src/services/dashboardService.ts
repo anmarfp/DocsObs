@@ -1,5 +1,6 @@
 import { DocumentStatus, Role } from '@prisma/client';
 import { prisma } from '../lib/prisma.js';
+import { addCivilDays, getBusinessToday } from '../utils/date.js';
 
 export interface DashboardMetrics {
   statusCounts: Record<DocumentStatus, number>;
@@ -79,15 +80,17 @@ export async function getDashboardMetrics(userRole: Role): Promise<DashboardMetr
   const complianceRate =
     totalActive === 0 ? 100 : Math.round((statusCounts.REGULAR / totalActive) * 100);
 
-  const now = new Date();
-  const in30Days = new Date();
-  in30Days.setDate(in30Days.getDate() + 30);
+  // Janela de próximos vencimentos em datas civis (DOC-27): de hoje (no fuso de
+  // negócio, como meia-noite UTC) até hoje + 30 dias, inclusive — um documento que
+  // vence hoje continua na lista.
+  const today = getBusinessToday();
+  const in30Days = addCivilDays(today, 30);
 
   const upcomingExpirations = await prisma.document.findMany({
     where: {
       isArchived: false,
       expirationDate: {
-        gte: now,
+        gte: today,
         lte: in30Days,
       },
     },
