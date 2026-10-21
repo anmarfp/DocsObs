@@ -33,3 +33,6 @@ Thumbs.db
 .aihaus/runtime/
 .aihaus/backups/
 <!-- AIHAUS:END -->
+
+__pycache__/
+.pytest_cache/
