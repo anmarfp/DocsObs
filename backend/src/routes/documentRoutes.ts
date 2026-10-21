@@ -1,9 +1,10 @@
 import { Router } from 'express';
 import { Role } from '@prisma/client';
 import { authMiddleware, requireRole } from '../middlewares/auth.js';
-import { upload } from '../services/storageService.js';
+import { upload, uploadMemory } from '../services/storageService.js';
 import {
   createDocument,
+  extractDocumentFields,
   listDocuments,
   getDocumentById,
   updateDocument,
@@ -20,6 +21,9 @@ documentRouter.use(authMiddleware);
 
 // 1. Criação de documento (com upload opcional de anexo)
 documentRouter.post('/', upload.single('attachment'), createDocument);
+
+// 1.1 Extração automática de campos a partir do anexo (em memória, sem persistência)
+documentRouter.post('/extract', uploadMemory.single('attachment'), extractDocumentFields);
 
 // 2. Listagem de documentos com filtros (categoria, status, busca e arquivados)
 documentRouter.get('/', listDocuments);

@@ -43,10 +43,25 @@ export const AuditDiffViewer: React.FC<AuditDiffViewerProps> = ({ diffData }) =>
     return <span className="text-slate-400 text-xs italic">Sem alterações detalhadas registradas.</span>;
   }
 
+  const fieldOrigins =
+    diffData.fieldOrigins && typeof diffData.fieldOrigins === 'object'
+      ? (diffData.fieldOrigins as Record<string, string>)
+      : undefined;
+
+  const extraction =
+    diffData.extraction && typeof diffData.extraction === 'object'
+      ? (diffData.extraction as { engine?: string; confidence?: Record<string, number> })
+      : undefined;
+
+  const entries = Object.entries(diffData).filter(
+    ([key]) => key !== 'fieldOrigins' && key !== 'extraction'
+  );
+
   return (
     <div className="space-y-1.5 text-xs">
-      {Object.entries(diffData).map(([key, val]) => {
+      {entries.map(([key, val]) => {
         const label = FIELD_LABELS[key] || key;
+        const origin = fieldOrigins?.[key];
 
         let oldVal: unknown = undefined;
         let newVal: unknown = undefined;
@@ -63,20 +78,39 @@ export const AuditDiffViewer: React.FC<AuditDiffViewerProps> = ({ diffData }) =>
         return (
           <div
             key={key}
-            className="p-2 rounded-lg bg-slate-50 border border-slate-100 font-mono text-[11px] leading-relaxed"
+            className="p-2 rounded-lg bg-slate-50 border border-slate-100 font-mono text-[11px] leading-relaxed flex items-center justify-between"
           >
-            <span className="font-semibold text-slate-700 font-sans">{label}: </span>
-            {!isNewOnly && oldVal !== undefined && (
-              <span className="text-red-600 line-through mr-2 font-medium">
-                {formatDiffValue(oldVal)}
+            <div>
+              <span className="font-semibold text-slate-700 font-sans">{label}: </span>
+              {!isNewOnly && oldVal !== undefined && (
+                <span className="text-red-600 line-through mr-2 font-medium">
+                  {formatDiffValue(oldVal)}
+                </span>
+              )}
+              <span className="text-emerald-700 font-medium">
+                {formatDiffValue(newVal)}
+              </span>
+            </div>
+            {origin && (
+              <span
+                className={`ml-2 text-[10px] font-sans font-semibold px-2 py-0.5 rounded-full ${
+                  origin === 'AUTO'
+                    ? 'bg-purple-100 text-purple-800 border border-purple-200'
+                    : 'bg-slate-200 text-slate-700'
+                }`}
+              >
+                {origin === 'AUTO' ? 'Automático' : 'Digitado'}
               </span>
             )}
-            <span className="text-emerald-700 font-medium">
-              {formatDiffValue(newVal)}
-            </span>
           </div>
         );
       })}
+
+      {extraction && (
+        <div className="mt-2 pt-2 border-t border-slate-100 text-[10px] text-slate-500 font-sans flex items-center justify-between">
+          <span>Módulo de Extração: {extraction.engine || 'OCR'}</span>
+        </div>
+      )}
     </div>
   );
 };

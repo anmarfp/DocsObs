@@ -93,6 +93,16 @@ docker compose up -d --build
 - 🔌 **Backend API:** [http://localhost:3001/api/v1/health](http://localhost:3001/api/v1/health)
 - 🗄️ **PostgreSQL:** `localhost:5432` (Usuário: `postgres`, Senha: `postgres`, Banco: `docsobs`)
 
+### 3. Serviço de Extração por OCR (perfil opcional):
+
+Para inicializar a aplicação com o serviço de extração automática de dados dos documentos (PDF, PNG, JPEG):
+
+```bash
+docker compose --profile extraction up -d --build
+```
+
+O serviço Python sobe em container isolado sob demanda (`EXTRACTION_SERVICE_URL=http://extraction:8000`), preenchendo sugestões no cadastro de documentos. Sem o perfil, o DocsObs sobe como de costume e o preenchimento manual continua funcionando normalmente.
+
 ---
 
 ## 💻 Início Rápido Local (Desenvolvimento)

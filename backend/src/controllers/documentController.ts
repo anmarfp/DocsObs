@@ -4,8 +4,10 @@ import { Role, DocumentStatus, AuditAction, NotificationMode, Prisma } from '@pr
 import { prisma } from '../lib/prisma.js';
 import { AuthenticatedRequest } from '../types/index.js';
 import { calculateDocumentStatus } from '../services/statusService.js';
-import { deleteUploadedFile } from '../services/storageService.js';
+import { deleteUploadedFile, detectFileType } from '../services/storageService.js';
 import { syncDocumentEvent, deleteDocumentEvent } from '../services/gcalService.js';
+import { env } from '../config/env.js';
+import { extractFromBuffer } from '../services/extractionService.js';
 
 function isPrismaP2002Error(error: unknown): boolean {
   if (error instanceof Prisma.PrismaClientKnownRequestError) {
@@ -76,6 +78,16 @@ const createDocumentSchema = z.object({
     .union([z.boolean(), z.string()])
     .optional()
     .transform((val) => val === true || val === 'true'),
+  extractionSuggestions: z
+    .string()
+    .optional()
+    .nullable()
+    .transform((val) => (!val || val.trim() === '' ? null : val.trim())),
+  extractionConfirmed: z
+    .string()
+    .optional()
+    .nullable()
+    .transform((val) => (!val || val.trim() === '' ? null : val.trim())),
 });
 
 // Schema de validação para atualização de documento
@@ -161,6 +173,28 @@ export async function createDocument(
 
     const parsed = createDocumentSchema.parse(req.body);
 
+    let parsedSuggestions: any = null;
+    if (parsed.extractionSuggestions) {
+      if (parsed.extractionConfirmed !== 'true') {
+        if (req.file) await deleteUploadedFile(req.file.filename);
+        res.status(400).json({
+          error: 'EXTRACTION_CONFIRMATION_REQUIRED',
+          message: 'A confirmação humana das sugestões de extração é obrigatória.',
+        });
+        return;
+      }
+      try {
+        parsedSuggestions = JSON.parse(parsed.extractionSuggestions);
+      } catch {
+        if (req.file) await deleteUploadedFile(req.file.filename);
+        res.status(400).json({
+          error: 'INVALID_SUGGESTIONS_JSON',
+          message: 'O campo extractionSuggestions deve conter um JSON válido.',
+        });
+        return;
+      }
+    }
+
     // Validação da regra RN-004: Condicional de Responsável x Configuração da Empresa
     const companyConfig = await prisma.companyConfig.findFirst();
     if (companyConfig?.notificationMode === NotificationMode.ONLY_RESPONSIBLE) {
@@ -226,21 +260,75 @@ export async function createDocument(
         },
       });
 
+      const diffData: Record<string, any> = {
+        title: { new: created.title },
+        categoryId: { new: created.categoryId },
+        issueDate: { new: created.issueDate },
+        expirationDate: { new: created.expirationDate },
+        status: { new: created.status },
+        alertLeadDays: { new: created.alertLeadDays },
+        attachmentFilename: { new: created.attachmentFilename },
+      };
+
+      if (parsedSuggestions && typeof parsedSuggestions === 'object') {
+        const fields = parsedSuggestions.fields || {};
+
+        const toDateString = (d: Date | string | null | undefined): string | null => {
+          if (!d) return null;
+          if (typeof d === 'string') {
+            const trimmed = d.trim().slice(0, 10);
+            return trimmed || null;
+          }
+          if (d instanceof Date && !isNaN(d.getTime())) {
+            return d.toISOString().slice(0, 10);
+          }
+          return null;
+        };
+
+        const savedIssueDate = toDateString(created.issueDate);
+        const suggestedIssueDate = toDateString(fields.issueDate?.value);
+        const isIssueDateAuto =
+          suggestedIssueDate !== null &&
+          savedIssueDate !== null &&
+          suggestedIssueDate === savedIssueDate;
+
+        const savedExpDate = toDateString(created.expirationDate);
+        const suggestedExpDate = toDateString(fields.expirationDate?.value);
+        const isExpDateAuto =
+          suggestedExpDate !== null &&
+          savedExpDate !== null &&
+          suggestedExpDate === savedExpDate;
+
+        const savedIssuingBody = (created.issuingBody || '').trim();
+        const suggestedIssuingBody = (fields.issuingBody?.value || '').trim();
+        const isIssuingBodyAuto =
+          suggestedIssuingBody !== '' &&
+          savedIssuingBody !== '' &&
+          suggestedIssuingBody === savedIssuingBody;
+
+        diffData.fieldOrigins = {
+          issueDate: isIssueDateAuto ? 'AUTO' : 'MANUAL',
+          expirationDate: isExpDateAuto ? 'AUTO' : 'MANUAL',
+          issuingBody: isIssuingBodyAuto ? 'AUTO' : 'MANUAL',
+        };
+
+        diffData.extraction = {
+          engine: parsedSuggestions.engine ?? 'unknown',
+          confidence: {
+            issueDate: fields.issueDate?.confidence ?? 0,
+            expirationDate: fields.expirationDate?.confidence ?? 0,
+            issuingBody: fields.issuingBody?.confidence ?? 0,
+          },
+        };
+      }
+
       await tx.auditLog.create({
         data: {
           documentId: created.id,
           userId: req.user!.userId,
           userName: req.user!.name,
           action: AuditAction.CREATE,
-          diffData: {
-            title: { new: created.title },
-            categoryId: { new: created.categoryId },
-            issueDate: { new: created.issueDate },
-            expirationDate: { new: created.expirationDate },
-            status: { new: created.status },
-            alertLeadDays: { new: created.alertLeadDays },
-            attachmentFilename: { new: created.attachmentFilename },
-          },
+          diffData,
         },
       });
 
@@ -1021,6 +1109,58 @@ export async function getDocumentVersions(
     });
 
     res.status(200).json({ documentId: id, versions });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * Endpoint de extração automática de campos a partir do anexo enviado.
+ * Recebe o anexo em memória, valida magic bytes e chama o serviço de extração.
+ * Não grava nada em disco nem persiste no banco de dados.
+ */
+export async function extractDocumentFields(
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    if (!req.user) {
+      res.status(401).json({ error: 'UNAUTHORIZED', message: 'Usuário não autenticado.' });
+      return;
+    }
+
+    if (!req.file || !req.file.buffer || req.file.buffer.length === 0) {
+      res.status(400).json({
+        error: 'FILE_REQUIRED',
+        message: 'Nenhum arquivo enviado para extração.',
+      });
+      return;
+    }
+
+    const detected = detectFileType(req.file.buffer);
+    if (!detected) {
+      res.status(400).json({
+        error: 'INVALID_FILE_TYPE',
+        message: 'Tipo de arquivo não permitido: o conteúdo do arquivo não corresponde a um PDF, PNG ou JPEG. Formatos aceitos: PDF, PNG, JPEG, JPG.',
+      });
+      return;
+    }
+
+    if (!env.EXTRACTION_SERVICE_URL || env.EXTRACTION_SERVICE_URL.trim() === '') {
+      res.status(503).json({ message: 'Serviço de extração indisponível' });
+      return;
+    }
+
+    try {
+      const result = await extractFromBuffer(req.file.buffer, detected.mime);
+      res.status(200).json(result);
+    } catch (err) {
+      if (env.NODE_ENV !== 'test') {
+        console.error('⚠️ [Extraction] Falha na comunicação com serviço de extração:', err);
+      }
+      res.status(503).json({ message: 'Serviço de extração indisponível' });
+    }
   } catch (error) {
     next(error);
   }
