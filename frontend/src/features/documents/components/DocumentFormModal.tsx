@@ -2,7 +2,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { X, Loader2, AlertCircle, RefreshCw } from 'lucide-react';
+import { X, Loader2, AlertCircle, RefreshCw, Sparkles } from 'lucide-react';
 import { AxiosError } from 'axios';
 import {
   Document,
@@ -11,13 +11,13 @@ import {
   NotificationMode,
   DEFAULT_CATEGORY_NAME,
 } from '../types/document.types';
-import { documentService } from '../services/documentService';
+import { documentService, ExtractionResponse } from '../services/documentService';
 import { companyService } from '../services/companyService';
 import {
   createDocumentFormSchema,
   DocumentFormValues,
 } from '../utils/documentValidation';
-import { buildCreateFormData, buildUpdateFormData } from '../utils/formDataHelper';
+import { buildCreateFormData, buildUpdateFormData, DocumentFormData } from '../utils/formDataHelper';
 import { toInputDateFormat } from '../utils/dateHelper';
 import FileDropzone from './FileDropzone';
 
@@ -45,6 +45,15 @@ export const DocumentFormModal: React.FC<DocumentFormModalProps> = ({
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [isExtracting, setIsExtracting] = useState<boolean>(false);
+  const [extractionSuggestions, setExtractionSuggestions] = useState<ExtractionResponse | null>(null);
+  const [suggestedFields, setSuggestedFields] = useState<{
+    issueDate?: number;
+    expirationDate?: number;
+    issuingBody?: number;
+  }>({});
+  const [isExtractionConfirmed, setIsExtractionConfirmed] = useState<boolean>(false);
+  const [extractionErrorMsg, setExtractionErrorMsg] = useState<string | null>(null);
 
   const notificationMode: NotificationMode = config?.notificationMode || 'ALL_ADMINS';
 
@@ -56,6 +65,7 @@ export const DocumentFormModal: React.FC<DocumentFormModalProps> = ({
     register,
     handleSubmit,
     reset,
+    setValue,
     formState: { errors },
   } = useForm<DocumentFormValues>({
     resolver: zodResolver(schema) as any,
@@ -88,11 +98,56 @@ export const DocumentFormModal: React.FC<DocumentFormModalProps> = ({
     }
   };
 
+  const handleFileSelect = (file: File | null) => {
+    setSelectedFile(file);
+    setExtractionSuggestions(null);
+    setSuggestedFields({});
+    setIsExtractionConfirmed(false);
+    setExtractionErrorMsg(null);
+  };
+
+  const handleSuggestFields = async () => {
+    if (!selectedFile) return;
+    setIsExtracting(true);
+    setExtractionErrorMsg(null);
+    try {
+      const res = await documentService.extractFields(selectedFile);
+      setExtractionSuggestions(res);
+
+      const newSuggestedFields: { issueDate?: number; expirationDate?: number; issuingBody?: number } = {};
+
+      if (res.fields.issueDate?.value) {
+        setValue('issueDate', toInputDateFormat(res.fields.issueDate.value), { shouldValidate: true });
+        newSuggestedFields.issueDate = Math.round(res.fields.issueDate.confidence * 100);
+      }
+      if (res.fields.expirationDate?.value) {
+        setValue('expirationDate', toInputDateFormat(res.fields.expirationDate.value), { shouldValidate: true });
+        newSuggestedFields.expirationDate = Math.round(res.fields.expirationDate.confidence * 100);
+      }
+      if (res.fields.issuingBody?.value) {
+        setValue('issuingBody', res.fields.issuingBody.value, { shouldValidate: true });
+        newSuggestedFields.issuingBody = Math.round(res.fields.issuingBody.confidence * 100);
+      }
+
+      setSuggestedFields(newSuggestedFields);
+      setIsExtractionConfirmed(false);
+    } catch (err) {
+      console.warn('Sugestão automática indisponível:', err);
+      setExtractionErrorMsg('Sugestão indisponível; preencha manualmente');
+    } finally {
+      setIsExtracting(false);
+    }
+  };
+
   useEffect(() => {
     if (isOpen) {
       loadConfig();
       setSelectedFile(null);
       setUploadProgress(null);
+      setExtractionSuggestions(null);
+      setSuggestedFields({});
+      setIsExtractionConfirmed(false);
+      setExtractionErrorMsg(null);
 
       if (documentToEdit) {
         reset({
@@ -142,10 +197,15 @@ export const DocumentFormModal: React.FC<DocumentFormModalProps> = ({
     setUploadProgress(0);
 
     try {
-      const payloadValues: DocumentFormValues & { attachment?: File | null } = {
+      const payloadValues: DocumentFormData = {
         ...values,
         attachment: selectedFile,
       };
+
+      if (!isEdit && extractionSuggestions && isExtractionConfirmed) {
+        payloadValues.extractionSuggestions = extractionSuggestions;
+        payloadValues.extractionConfirmed = 'true';
+      }
 
       if (notificationMode === 'ALL_ADMINS') {
         payloadValues.responsibleName = undefined;
@@ -305,17 +365,38 @@ export const DocumentFormModal: React.FC<DocumentFormModalProps> = ({
               </div>
 
               <div>
-                <label htmlFor="doc-issuing" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                  Órgão Emissor
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label htmlFor="doc-issuing" className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                    Órgão Emissor
+                  </label>
+                  {suggestedFields.issuingBody !== undefined && (
+                    <span className="text-[10px] bg-purple-100 text-purple-800 font-semibold px-2 py-0.5 rounded-full border border-purple-200">
+                      Sugerido automaticamente · confiança {suggestedFields.issuingBody}%
+                    </span>
+                  )}
+                </div>
                 <input
                   id="doc-issuing"
                   type="text"
                   placeholder="Ex: Prefeitura Municipal, Receita Federal"
                   disabled={isSubmitting}
-                  {...register('issuingBody')}
+                  {...register('issuingBody', {
+                    onChange: () => {
+                      if (suggestedFields.issuingBody !== undefined) {
+                        setSuggestedFields((prev) => {
+                          const next = { ...prev };
+                          delete next.issuingBody;
+                          return next;
+                        });
+                      }
+                    },
+                  })}
                   className={`w-full px-3.5 py-2 bg-white border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-navy-600 transition ${
-                    errors.issuingBody ? 'border-red-300 ring-1 ring-red-300' : 'border-slate-200'
+                    suggestedFields.issuingBody !== undefined
+                      ? 'border-purple-400 bg-purple-50/20'
+                      : errors.issuingBody
+                      ? 'border-red-300 ring-1 ring-red-300'
+                      : 'border-slate-200'
                   }`}
                 />
                 {errors.issuingBody && (
@@ -327,16 +408,37 @@ export const DocumentFormModal: React.FC<DocumentFormModalProps> = ({
             {/* Dates & Alert Days */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div>
-                <label htmlFor="doc-issueDate" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                  Data de Emissão <span className="text-red-500">*</span>
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label htmlFor="doc-issueDate" className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                    Data de Emissão <span className="text-red-500">*</span>
+                  </label>
+                  {suggestedFields.issueDate !== undefined && (
+                    <span className="text-[10px] bg-purple-100 text-purple-800 font-semibold px-2 py-0.5 rounded-full border border-purple-200">
+                      Sugerido automaticamente · confiança {suggestedFields.issueDate}%
+                    </span>
+                  )}
+                </div>
                 <input
                   id="doc-issueDate"
                   type="date"
                   disabled={isSubmitting}
-                  {...register('issueDate')}
+                  {...register('issueDate', {
+                    onChange: () => {
+                      if (suggestedFields.issueDate !== undefined) {
+                        setSuggestedFields((prev) => {
+                          const next = { ...prev };
+                          delete next.issueDate;
+                          return next;
+                        });
+                      }
+                    },
+                  })}
                   className={`w-full px-3.5 py-2 bg-white border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-navy-600 transition ${
-                    errors.issueDate ? 'border-red-300 ring-1 ring-red-300' : 'border-slate-200'
+                    suggestedFields.issueDate !== undefined
+                      ? 'border-purple-400 bg-purple-50/20'
+                      : errors.issueDate
+                      ? 'border-red-300 ring-1 ring-red-300'
+                      : 'border-slate-200'
                   }`}
                 />
                 {errors.issueDate && (
@@ -345,16 +447,37 @@ export const DocumentFormModal: React.FC<DocumentFormModalProps> = ({
               </div>
 
               <div>
-                <label htmlFor="doc-expirationDate" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                  Data de Vencimento
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label htmlFor="doc-expirationDate" className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                    Data de Vencimento
+                  </label>
+                  {suggestedFields.expirationDate !== undefined && (
+                    <span className="text-[10px] bg-purple-100 text-purple-800 font-semibold px-2 py-0.5 rounded-full border border-purple-200">
+                      Sugerido automaticamente · confiança {suggestedFields.expirationDate}%
+                    </span>
+                  )}
+                </div>
                 <input
                   id="doc-expirationDate"
                   type="date"
                   disabled={isSubmitting}
-                  {...register('expirationDate')}
+                  {...register('expirationDate', {
+                    onChange: () => {
+                      if (suggestedFields.expirationDate !== undefined) {
+                        setSuggestedFields((prev) => {
+                          const next = { ...prev };
+                          delete next.expirationDate;
+                          return next;
+                        });
+                      }
+                    },
+                  })}
                   className={`w-full px-3.5 py-2 bg-white border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-navy-600 transition ${
-                    errors.expirationDate ? 'border-red-300 ring-1 ring-red-300' : 'border-slate-200'
+                    suggestedFields.expirationDate !== undefined
+                      ? 'border-purple-400 bg-purple-50/20'
+                      : errors.expirationDate
+                      ? 'border-red-300 ring-1 ring-red-300'
+                      : 'border-slate-200'
                   }`}
                 />
                 <span className="text-[10px] text-slate-400 mt-0.5 block">Em branco = Indeterminado</span>
@@ -481,13 +604,59 @@ export const DocumentFormModal: React.FC<DocumentFormModalProps> = ({
               </label>
               <FileDropzone
                 selectedFile={selectedFile}
-                onFileSelect={setSelectedFile}
+                onFileSelect={handleFileSelect}
                 uploadProgress={uploadProgress}
                 existingFileName={documentToEdit?.attachmentFilename}
                 existingFileSize={documentToEdit?.fileSizeBytes}
-                disabled={isSubmitting}
+                disabled={isSubmitting || isExtracting}
               />
+
+              {!isEdit && selectedFile && (
+                <div className="mt-2.5 flex items-center space-x-3">
+                  <button
+                    type="button"
+                    onClick={handleSuggestFields}
+                    disabled={isExtracting || isSubmitting}
+                    className="inline-flex items-center px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-semibold rounded-lg border border-indigo-200 transition disabled:opacity-50"
+                  >
+                    {isExtracting ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin text-indigo-600" />
+                        Sugerindo campos...
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-3.5 h-3.5 mr-1.5 text-indigo-600" />
+                        Sugerir campos a partir do anexo
+                      </>
+                    )}
+                  </button>
+                  {extractionErrorMsg && (
+                    <span className="text-xs text-amber-700 bg-amber-50 px-2.5 py-1 rounded-md border border-amber-200">
+                      {extractionErrorMsg}
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
+
+            {/* Confirmação obrigatória das sugestões de extração */}
+            {!isEdit && extractionSuggestions && (
+              <div className="p-3 bg-purple-50/70 border border-purple-200 rounded-xl space-y-1">
+                <div className="flex items-center space-x-2">
+                  <input
+                    id="confirm-extraction"
+                    type="checkbox"
+                    checked={isExtractionConfirmed}
+                    onChange={(e) => setIsExtractionConfirmed(e.target.checked)}
+                    className="h-4 w-4 rounded border-purple-300 text-navy-600 focus:ring-navy-600 cursor-pointer"
+                  />
+                  <label htmlFor="confirm-extraction" className="text-xs text-purple-950 font-bold cursor-pointer">
+                    Revisei os campos sugeridos e confirmo que estão corretos <span className="text-red-500">*</span>
+                  </label>
+                </div>
+              </div>
+            )}
           </form>
         </div>
 
@@ -504,7 +673,12 @@ export const DocumentFormModal: React.FC<DocumentFormModalProps> = ({
           <button
             type="submit"
             form="document-form"
-            disabled={isSubmitting || isLoadingConfig || !!configError}
+            disabled={
+              isSubmitting ||
+              isLoadingConfig ||
+              !!configError ||
+              (Boolean(!isEdit && extractionSuggestions) && !isExtractionConfirmed)
+            }
             className="btn-primary min-w-[120px]"
           >
             {isSubmitting ? (

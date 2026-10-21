@@ -21,7 +21,32 @@ export function resolveAttachmentBlobType(headerType: unknown): string {
     : 'application/octet-stream';
 }
 
+export interface ExtractedField {
+  value: string | null;
+  confidence: number;
+}
+
+export interface ExtractionResponse {
+  engine: string;
+  engineVersion: string;
+  fields: {
+    issueDate: ExtractedField;
+    expirationDate: ExtractedField;
+    issuingBody: ExtractedField;
+  };
+}
+
 export const documentService = {
+  /**
+   * Extrai sugestões de campos a partir do arquivo anexo.
+   */
+  extractFields: async (file: File): Promise<ExtractionResponse> => {
+    const formData = new FormData();
+    formData.append('attachment', file);
+    const response = await api.post<ExtractionResponse>('/documents/extract', formData);
+    return response.data;
+  },
+
   /**
    * List documents with optional filters (search, categoryId, status, includeArchived).
    * Note: The backend returns exactly { documents, total }.

@@ -30,6 +30,8 @@ export interface Env {
   readonly MAX_FILE_SIZE_BYTES: number;
   readonly APP_TIMEZONE?: string;
   readonly CRON_ENABLED: boolean;
+  readonly EXTRACTION_SERVICE_URL?: string;
+  readonly EXTRACTION_TIMEOUT_MS: number;
   readonly google: GoogleConfig | null;
   readonly smtp: SmtpConfig | null;
 }
@@ -122,6 +124,15 @@ const EnvSchema = z
       if (typeof val === 'string' && val.trim() !== '') return val.trim();
       return undefined;
     }, z.string().optional()),
+    EXTRACTION_SERVICE_URL: z.preprocess((val) => {
+      if (typeof val === 'string' && val.trim() !== '') return val.trim();
+      return undefined;
+    }, z.string().url('EXTRACTION_SERVICE_URL deve ser uma URL válida').optional()),
+    EXTRACTION_TIMEOUT_MS: z.preprocess((val) => {
+      if (val === undefined || val === '') return 60000;
+      const num = Number(val);
+      return Number.isNaN(num) ? val : num;
+    }, z.number({ invalid_type_error: 'EXTRACTION_TIMEOUT_MS deve ser um número válido' }).int('EXTRACTION_TIMEOUT_MS deve ser um número inteiro').positive('EXTRACTION_TIMEOUT_MS deve ser maior que zero')),
   })
   .superRefine((data, ctx) => {
     if (data.NODE_ENV === 'production') {
@@ -255,6 +266,8 @@ export function loadEnv(
     MAX_FILE_SIZE_BYTES: parsed.data.MAX_FILE_SIZE_BYTES,
     APP_TIMEZONE: parsed.data.APP_TIMEZONE,
     CRON_ENABLED: parsed.data.CRON_ENABLED,
+    EXTRACTION_SERVICE_URL: parsed.data.EXTRACTION_SERVICE_URL,
+    EXTRACTION_TIMEOUT_MS: parsed.data.EXTRACTION_TIMEOUT_MS,
     google,
     smtp,
   });
@@ -268,4 +281,3 @@ export const env: Env = (() => {
     process.exit(1);
   }
 })();
-

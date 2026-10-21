@@ -10,6 +10,8 @@ export interface DocumentFormData {
   notes?: string | null;
   isRenewalInProgress?: boolean;
   attachment?: File | null;
+  extractionSuggestions?: string | object | null;
+  extractionConfirmed?: boolean | string | null;
 }
 
 export interface RenewFormData {
@@ -55,6 +57,19 @@ export function buildCreateFormData(data: DocumentFormData): FormData {
   }
   if (data.attachment instanceof File) {
     fd.append('attachment', data.attachment);
+  }
+  if (data.extractionSuggestions) {
+    const serialized =
+      typeof data.extractionSuggestions === 'string'
+        ? data.extractionSuggestions
+        : JSON.stringify(data.extractionSuggestions);
+    fd.append('extractionSuggestions', serialized);
+  }
+  if (data.extractionConfirmed !== undefined && data.extractionConfirmed !== null) {
+    fd.append(
+      'extractionConfirmed',
+      data.extractionConfirmed === true || data.extractionConfirmed === 'true' ? 'true' : 'false'
+    );
   }
   return fd;
 }

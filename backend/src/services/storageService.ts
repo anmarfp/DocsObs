@@ -171,6 +171,16 @@ export const upload = {
 };
 
 /**
+ * Middleware de upload em memória (não grava em disco).
+ * Usado pelo endpoint de extração OCR/IA.
+ */
+export const uploadMemory = {
+  single(fieldName: string): RequestHandler {
+    return multerInstance.single(fieldName);
+  },
+};
+
+/**
  * Cabeçalhos aplicados a toda resposta que serve um anexo (express.static de
  * /api/v1/uploads). Content-Type fixo pela extensão allow-listed, `nosniff` e
  * `Content-Disposition: attachment` com nome seguro (o nome gerado no servidor).
