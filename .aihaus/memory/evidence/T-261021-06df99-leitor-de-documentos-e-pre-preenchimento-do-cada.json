@@ -1,0 +1,103 @@
+{
+  "schema": "aihaus.evidence.v1",
+  "verdict": "PASS",
+  "commit": "cd6e84a",
+  "acceptance": [
+    {
+      "criterion": "Servico Python `extraction-service/` (OCR Tesseract + regras) le PDF, PNG e JPEG e devolve data de emissao, data de vencimento e orgao emissor com confianca, via HTTP (`GET /health`, `POST /extract`)",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "docker build -t docsobs-extraction:review extraction-service && docker run --rm docsobs-extraction:review sh -c \"pip install -q -r requirements-dev.txt; timeout 1500 python -m pytest -q tests/\" (61 passed)",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "criterion": "Servico sobe pelo perfil opcional `extraction` do `docker-compose.yml`; sem o perfil o stack sobe como antes",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "docker compose -p docsobs-smoke --profile extraction up -d --build --wait (postgres, backend, extraction e frontend healthy)",
+          "exit_code": 0
+        },
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npm run test:e2e (stack padrao sem perfil; 20/20, inclui TC-E2E-09)",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "criterion": "`POST /api/v1/documents/extract` no backend repassa o anexo ao servico e devolve os tres campos com confianca; sem servico configurado responde sem quebrar o cadastro manual",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "fumaca: curl -F attachment=@<PDF de imagem gerado no teste> POST /api/v1/documents/extract -> 200 com issueDate 2026-03-15, expirationDate 2026-09-11 e issuingBody canonico; sem token -> 401",
+          "exit_code": 0
+        },
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "cd backend && npx vitest run --maxWorkers=2 (277/277; inclui tests/document-extraction.test.ts)",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "criterion": "Formulario de cadastro pre-preenche com destaque visual e exige confirmacao humana antes de salvar",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "cd frontend && npx vitest run --maxWorkers=2 (41/41; inclui tests/document-extraction.test.tsx) && npm --prefix frontend run test:typecheck",
+          "exit_code": 0
+        },
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "fumaca: POST /api/v1/documents com extractionSuggestions sem extractionConfirmed -> 400 EXTRACTION_CONFIRMATION_REQUIRED",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "criterion": "Auditoria distingue campo sugerido automaticamente de campo digitado (`fieldOrigins`)",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "fumaca: POST /api/v1/documents confirmado com vencimento editado -> 201; GET /api/v1/audit-logs: fieldOrigins issueDate AUTO, issuingBody AUTO, expirationDate MANUAL",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "criterion": "Testes Python, backend, frontend, typecheck, build e E2E verdes",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npm --prefix backend run build && node .aihaus/tools/scope-check.mjs --base d260787 --allow <arquivos da tarefa> --json (ok: true)",
+          "exit_code": 0
+        }
+      ]
+    }
+  ]
+}
