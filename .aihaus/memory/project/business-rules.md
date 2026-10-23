@@ -77,12 +77,13 @@ comportamento do código é anotado separadamente quando diverge.
 
 - **status:** accepted
 - **domain:** software
-- **statement:** Criação, edição, arquivamento e exclusão de documentos com vencimento disparam sincronização com o Google Agenda do usuário que cadastrou o documento, registrando `gcal_sync_logs`; falha de sync nunca bloqueia a resposta.
-- **source**: `docs/ARCHITECTURE.md` (reviewed 5186755)
-- **last-reviewed:** 824aace
-- **links:** implements: [RF-005], relates: [], decided-by: [ADR-009]
+- **statement:** Criação, edição, renovação, arquivamento e exclusão de documentos com vencimento disparam sincronização com o Google Agenda do usuário que cadastrou o documento, registrando `gcal_sync_logs`; falha de sync nunca bloqueia a resposta.
+- **source**: `docs/ARCHITECTURE.md` (reviewed 5186755); renovação: decisão do dono em 2026-10-23 (DOC-42, Opção A)
+- **last-reviewed:** 1c93a8b
+- **links:** implements: [RF-005], relates: [DOC-42], decided-by: [ADR-009]
 
 - Given o criador do documento sem conta Google conectada When o documento é sincronizado Then um log `ERROR` é gravado. Source: `backend/src/services/gcalService.ts` (reviewed 824aace).
+- Verified: Given um documento com vencimento When é renovado com sucesso Then, após o commit da transação, `syncDocumentEvent(doc, 'update')` atualiza o evento existente (reusa `gcalEventId`); falha no Google não bloqueia o 200, e renovação que falha não sincroniza (DOC-42). Source: `backend/src/controllers/documentController.ts`, `backend/tests/document-transactions.test.ts` (reviewed 1c93a8b).
 
 ### RN-008 — Auditoria obrigatória
 

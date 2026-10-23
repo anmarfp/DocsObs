@@ -71,7 +71,7 @@ O sistema **DocsObs** é uma plataforma web moderna, responsiva e Local-First, f
     OAuth2 individual (modelo de conta por usuário — ADR-009): cada Administrador
     ou Operacional conecta sua própria conta Google em Configurações antes de
     sincronizar.
-  - Disparo automático de sincronização na criação, edição, arquivamento e
+  - Disparo automático de sincronização na criação, edição, renovação, arquivamento e
     exclusão de documentos com vencimento (RN-007), além do disparo manual pelo
     botão "Sincronizar com Agenda".
   - Consulta de logs de sincronização (`gcal_sync_logs`) restrita a `ADMIN`.
@@ -118,7 +118,7 @@ O sistema **DocsObs** é uma plataforma web moderna, responsiva e Local-First, f
 - **[RN-004] Condicional Responsável vs Modo da Empresa**: A presença e obrigatoriedade do campo "Responsável" no frontend e backend segue estritamente o valor de `company_config.notification_mode`.
 - **[RN-005] Single-Tenant no MVP**: Estrutura otimizada para operação de uma empresa/organização no MVP, com isolamento e portabilidade de dados.
 - **[RN-006] Restrição de Visibilidade de Arquivados**: Usuários `OPERATIONAL` nunca recebem documentos arquivados nas consultas, e o filtro é omitido na UI.
-- **[RN-007] Sincronização com Agenda**: Operações de criação/edição disparam eventos de sincronização com registro de logs em `gcal_sync_logs`.
+- **[RN-007] Sincronização com Agenda**: Operações de criação, edição, renovação, arquivamento e exclusão de documentos com vencimento disparam eventos de sincronização com registro de logs em `gcal_sync_logs` (falhas de sincronização não bloqueiam a operação).
 - **[RN-008] Registro Obrigatório de Auditoria**: Qualquer alteração em documentos dispara inserção atômica em `audit_logs` com diff serializado em JSON.
 - **[RN-009] Restrição Administrativa de Gestão**: Apenas usuários com role `ADMIN` possuem permissão para acessar `/usuarios`, `/auditoria`, `/configuracoes` e rotas correspondentes da API.
 
