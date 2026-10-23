@@ -24,6 +24,8 @@
 - Verified: testes que precisam variar env usam `vi.mock('../src/config/env.js')` com um dublê mutável, nunca mutação de `process.env` em runtime. Source: `backend/tests/google-auth.test.ts` (reviewed 60daa31).
 - Verified: não defina `Content-Type` fixo na instância compartilhada do Axios — isso faz o Axios serializar `FormData` como JSON e quebra uploads (bug DOC-29); a instância atual não define o header. Source: `frontend/src/services/api.ts` (reviewed 824aace).
 - Verified: scripts shell devem usar LF; `.gitattributes` força `eol=lf` em `*.sh`. Source: `.gitattributes` (reviewed 824aace).
+- Verified: `prisma` e `@prisma/client` estão fixados em `~6.12.0` de propósito: as versões 6.13 a 7.10 puxam `deepmerge-ts` vulnerável (GHSA-ggr8-5vv4-36mx) via `@prisma/config`, e a correção só existe na 7.10.1+/8.x (major). Não suba para 6.13+ sem migrar de major (DOC-38). Source: `backend/package.json` (reviewed 6a7514a).
+- Verified: na imagem de produção o CLI do Prisma é instalado global (`npm install -g prisma@<versão de devDependencies.prisma>`) depois de `npm ci --omit=dev --omit=optional`; `npm install <pkg>` local sem `--omit=dev` reifica todas as devDependencies na imagem, e com `--omit=dev` ignora o próprio `prisma` por ser devDependency. O `npx prisma migrate deploy` do entrypoint resolve o CLI global sem rede (DOC-38). Source: `backend/Dockerfile` (reviewed 6a7514a).
 
 ## Useful code analogs
 

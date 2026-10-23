@@ -28,8 +28,12 @@ RUN apk add --no-cache openssl wget
 COPY package.json package-lock.json* ./
 COPY prisma ./prisma/
 
-# Instala dependências de runtime e prisma CLI para deploy de migrações
-RUN npm ci --omit=dev && npm install prisma@^6.4.1 --omit=dev
+# Instala apenas dependências de runtime em /app/node_modules (--omit=dev --omit=optional
+# evita reificar devDependencies e peerDependencies opcionais de dev como typescript)
+# e instala a CLI do Prisma em prefixo separado (-g /usr/local) na versão declarada no
+# package.json, pois npm install local com --omit=dev --omit=optional ignora pacotes
+# declarados em devDependencies.
+RUN npm ci --omit=dev --omit=optional && npm install -g "prisma@$(node -p "require('./package.json').devDependencies.prisma")"
 
 # Copia artefatos compilados do builder
 COPY --from=builder /app/dist ./dist
