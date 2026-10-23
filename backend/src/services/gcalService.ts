@@ -2,6 +2,11 @@ import { SyncStatus } from '@prisma/client';
 import { google } from 'googleapis';
 import { prisma } from '../lib/prisma.js';
 import { env } from '../config/env.js';
+import {
+  DecryptedGoogleOAuthToken,
+  getDecryptedGoogleTokens,
+  updateRefreshedGoogleTokens,
+} from './googleTokenStore.js';
 
 /**
  * Sincronização real com o Google Agenda (ADR-009 / DOC-28, subtarefa 3).
@@ -11,8 +16,8 @@ import { env } from '../config/env.js';
  * tem hoje um campo separado para "dono da agenda" — `createdById` é o único
  * vínculo disponível e é o mesmo já usado no restante do sistema (ex.: auditoria).
  * Se esse usuário nunca conectou sua conta Google (sem linha em
- * `GoogleOAuthToken`), a sincronização falha com `SyncStatus.ERROR` em vez de
- * tentar qualquer chamada de rede.
+ * `GoogleOAuthToken` ou com token indecifrável), a sincronização falha com
+ * `SyncStatus.ERROR` em vez de tentar qualquer chamada de rede.
  */
 
 export interface SyncDocumentEventResult {
@@ -46,43 +51,30 @@ function createOAuth2Client() {
 }
 
 /**
- * Monta um cliente OAuth2 autenticado com o token salvo do usuário e registra o
- * listener `tokens` da própria lib `googleapis`: quando ela renova o
+ * Monta um cliente OAuth2 autenticado com o token descriptografado do usuário e
+ * registra o listener `tokens` da própria lib `googleapis`: quando ela renova o
  * `access_token` automaticamente (usando o `refresh_token`) durante uma chamada
- * da API, esse evento dispara e persistimos a renovação em `GoogleOAuthToken`
- * para que a próxima sincronização não precise renovar de novo.
+ * da API, esse evento dispara e persistimos a renovação cifrada via
+ * `googleTokenStore` para que a próxima sincronização não precise renovar de novo.
  */
 function buildAuthenticatedOAuth2Client(
   userId: string,
-  token: { accessToken: string; refreshToken: string; expiryDate: Date }
+  token: DecryptedGoogleOAuthToken
 ) {
   const oauth2Client = createOAuth2Client();
 
   oauth2Client.setCredentials({
-    access_token: token.accessToken,
-    refresh_token: token.refreshToken,
-    expiry_date: token.expiryDate.getTime(),
+    access_token: token.access_token,
+    refresh_token: token.refresh_token,
+    expiry_date: token.expiry_date,
   });
 
   oauth2Client.on('tokens', (tokens) => {
-    const data: { accessToken?: string; refreshToken?: string; expiryDate?: Date } = {};
-
-    if (tokens.access_token) {
-      data.accessToken = tokens.access_token;
-    }
-    if (tokens.refresh_token) {
-      data.refreshToken = tokens.refresh_token;
-    }
-    if (tokens.expiry_date) {
-      data.expiryDate = new Date(tokens.expiry_date);
-    }
-
-    if (Object.keys(data).length === 0) {
-      return;
-    }
-
-    prisma.googleOAuthToken.update({ where: { userId }, data }).catch((error) => {
-      console.error('Falha ao persistir renovação automática do token do Google Agenda:', error);
+    updateRefreshedGoogleTokens(userId, tokens).catch((error) => {
+      console.error(
+        'Falha ao persistir renovação automática do token do Google Agenda:',
+        error instanceof Error ? error.message : 'erro desconhecido'
+      );
     });
   });
 
@@ -204,7 +196,7 @@ export async function syncDocumentEvent(
     };
   }
 
-  const token = await prisma.googleOAuthToken.findUnique({ where: { userId: doc.createdById } });
+  const token = await getDecryptedGoogleTokens(doc.createdById);
 
   if (!token) {
     await prisma.gCalSyncLog.create({
@@ -315,7 +307,7 @@ export async function deleteDocumentEvent(
     };
   }
 
-  const token = await prisma.googleOAuthToken.findUnique({ where: { userId: doc.createdById } });
+  const token = await getDecryptedGoogleTokens(doc.createdById);
 
   if (!token) {
     await prisma.gCalSyncLog.create({

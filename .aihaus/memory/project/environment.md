@@ -22,6 +22,7 @@
 ## External dependencies
 
 - Verified: Google OAuth2 + Google Calendar API (escopo `calendar.events`), configurados por `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` e `GOOGLE_REDIRECT_URI`; sem eles a conexão de agenda fica indisponível. Source: `docker-compose.yml` (reviewed 824aace).
+- Verified: `GOOGLE_TOKEN_ENCRYPTION_KEY` (32 bytes em base64/base64url) cifra os tokens OAuth; obrigatória com `NODE_ENV=production` e integração Google configurada (o boot aborta sem ela); em dev/test é gerada uma chave temporária com aviso. Gerar com `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"` (DOC-44). Source: `backend/src/config/env.ts`, `.env.example` (reviewed 597c468).
 - Verified: o rastreamento de tarefas usa Linear (time `DOC`) operado pela CLI do Orca. Source: `.claude/skills/orca-linear/SKILL.md` (reviewed 824aace).
 
 Describe topology and access expectations. Never store credentials or secret

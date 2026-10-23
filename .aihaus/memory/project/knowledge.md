@@ -10,6 +10,7 @@
 - Verified: `DELETE /documents/:id` exige `ADMIN`; criar/editar/renovar/arquivar exigem apenas autenticação. Source: `backend/src/routes/documentRoutes.ts` (reviewed 824aace).
 - Verified: criar/editar/excluir categorias exige `ADMIN`; listar exige apenas autenticação. Source: `backend/src/routes/categoryRoutes.ts` (reviewed 824aace).
 - Verified: variáveis de ambiente são lidas só em `backend/src/config/env.ts` (Zod, objeto congelado); em produção `JWT_SECRET` (>= 32) e `DATABASE_URL` são obrigatórios e o boot aborta com `exit 1` (DOC-33). Source: `backend/src/config/env.ts` (reviewed 60daa31).
+- Verified: `google_oauth_tokens.access_token`/`refresh_token` são cifrados em repouso com AES-256-GCM (`enc:v1:<iv>:<tag>:<ciphertext>`, base64url) e só `backend/src/services/googleTokenStore.ts` lê/grava esses campos; valores legados sem prefixo são aceitos na leitura e cifrados no boot (`encryptLegacyGoogleTokens`, idempotente); valor indecifrável = conta não conectada (DOC-44). Trocar `GOOGLE_TOKEN_ENCRYPTION_KEY` sem keyring desconecta todos os usuários até reconectarem. Source: `backend/src/utils/tokenCrypto.ts`, `backend/src/services/googleTokenStore.ts` (reviewed 597c468).
 
 ## Conflitos entre docs e código
 

@@ -1,15 +1,20 @@
 import { Request, Response, NextFunction } from 'express';
 import { google } from 'googleapis';
-import { prisma } from '../lib/prisma.js';
 import { AuthenticatedRequest } from '../types/index.js';
 import { signOAuthState, verifyOAuthState } from '../utils/jwt.js';
 import { env } from '../config/env.js';
+import {
+  deleteGoogleOAuthToken,
+  getGoogleTokenForRevoke,
+  isGoogleAccountConnected,
+  saveGoogleOAuthTokens,
+} from '../services/googleTokenStore.js';
 
 /**
  * Fluxo de conexão OAuth por usuário com o Google Agenda (ADR-009 / DOC-28, subtarefa 2).
  * Este módulo cuida apenas de conectar/desconectar a conta e persistir os tokens em
- * `GoogleOAuthToken`. A sincronização real com a API do Google Calendar é a subtarefa 3
- * (`gcalService.ts`), que ainda não consome estes tokens.
+ * `GoogleOAuthToken` por meio do `googleTokenStore` (cifrados em repouso com AES-256-GCM,
+ * DOC-44).
  */
 
 // Escopo mínimo necessário para ler e escrever eventos no Google Agenda do usuário (RF-005).
@@ -82,7 +87,7 @@ export async function getGoogleAuthUrl(
 /**
  * GET /calendar/google/callback (público — o navegador do usuário é redirecionado
  * aqui pelo Google, sem possibilidade de enviar um header Authorization).
- * Verifica o `state` assinado, troca o `code` pelos tokens e faz upsert em
+ * Verifica o `state` assinado, troca o `code` pelos tokens e faz upsert cifrado em
  * `GoogleOAuthToken`. Sempre redireciona de volta para a tela de Configurações do
  * frontend com `?google=connected` ou `?google=error`.
  */
@@ -114,39 +119,33 @@ export async function handleGoogleAuthCallback(req: Request, res: Response): Pro
     const oauth2Client = createOAuth2Client();
     const { tokens } = await oauth2Client.getToken(code);
 
-    const existing = await prisma.googleOAuthToken.findUnique({ where: { userId } });
+    const expiryDate = tokens.expiry_date
+      ? new Date(tokens.expiry_date)
+      : new Date(Date.now() + 3600 * 1000);
+    const scope = tokens.scope || GOOGLE_CALENDAR_SCOPES.join(' ');
 
     // Com access_type=offline + prompt=consent o Google sempre devolve um
     // refresh_token na primeira conexão. Se não vier e ainda não houver um token
-    // salvo para reaproveitar, não há como manter a conexão — trata como erro.
-    if (!tokens.refresh_token && !existing) {
+    // salvo legível para reaproveitar, não há como manter a conexão — trata como erro.
+    const saved = await saveGoogleOAuthTokens({
+      userId,
+      access_token: tokens.access_token,
+      refresh_token: tokens.refresh_token,
+      expiryDate,
+      scope,
+    });
+
+    if (!saved) {
       redirectTo('error');
       return;
     }
 
-    const expiryDate = tokens.expiry_date ? new Date(tokens.expiry_date) : new Date(Date.now() + 3600 * 1000);
-    const scope = tokens.scope || GOOGLE_CALENDAR_SCOPES.join(' ');
-
-    await prisma.googleOAuthToken.upsert({
-      where: { userId },
-      create: {
-        userId,
-        accessToken: tokens.access_token || '',
-        refreshToken: tokens.refresh_token as string,
-        expiryDate,
-        scope,
-      },
-      update: {
-        accessToken: tokens.access_token || existing?.accessToken || '',
-        ...(tokens.refresh_token ? { refreshToken: tokens.refresh_token } : {}),
-        expiryDate,
-        scope,
-      },
-    });
-
     redirectTo('connected');
   } catch (error) {
-    console.error('Erro no callback OAuth do Google Agenda:', error);
+    console.error(
+      'Erro no callback OAuth do Google Agenda:',
+      error instanceof Error ? error.message : 'erro desconhecido'
+    );
     redirectTo('error');
   }
 }
@@ -162,12 +161,9 @@ export async function getGoogleConnectionStatus(
   next: NextFunction
 ): Promise<void> {
   try {
-    const token = await prisma.googleOAuthToken.findUnique({
-      where: { userId: req.user!.userId },
-      select: { id: true },
-    });
+    const connected = await isGoogleAccountConnected(req.user!.userId);
 
-    res.status(200).json({ connected: Boolean(token) });
+    res.status(200).json({ connected });
   } catch (error) {
     next(error);
   }
@@ -177,7 +173,8 @@ export async function getGoogleConnectionStatus(
  * DELETE /calendar/google/status (autenticado)
  * Remove a conexão local. Tenta revogar o token junto ao Google em melhor esforço:
  * se a revogação falhar (token já expirado/inválido, indisponibilidade do Google,
- * etc.), a remoção local prossegue de qualquer forma.
+ * etc.) ou se o token armazenado for indecifrável, a remoção local prossegue de
+ * qualquer forma.
  */
 export async function disconnectGoogleAccount(
   req: AuthenticatedRequest,
@@ -185,21 +182,23 @@ export async function disconnectGoogleAccount(
   next: NextFunction
 ): Promise<void> {
   try {
-    const existing = await prisma.googleOAuthToken.findUnique({
-      where: { userId: req.user!.userId },
-    });
+    const userId = req.user!.userId;
+    const { hasStoredRow, tokenToRevoke } = await getGoogleTokenForRevoke(userId);
 
-    if (existing) {
-      if (isGoogleOAuthConfigured()) {
+    if (hasStoredRow) {
+      if (tokenToRevoke && isGoogleOAuthConfigured()) {
         try {
           const oauth2Client = createOAuth2Client();
-          await oauth2Client.revokeToken(existing.accessToken);
+          await oauth2Client.revokeToken(tokenToRevoke);
         } catch (revokeError) {
-          console.error('Falha ao revogar token do Google (removendo localmente mesmo assim):', revokeError);
+          console.error(
+            'Falha ao revogar token do Google (removendo localmente mesmo assim):',
+            revokeError instanceof Error ? revokeError.message : 'erro desconhecido'
+          );
         }
       }
 
-      await prisma.googleOAuthToken.delete({ where: { userId: req.user!.userId } });
+      await deleteGoogleOAuthToken(userId);
     }
 
     res.status(200).json({ connected: false });

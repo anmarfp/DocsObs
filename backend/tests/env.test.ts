@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -7,7 +8,7 @@ import { loadEnv } from '../src/config/env.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-describe('DOC-33 - Validação de Variáveis de Ambiente (src/config/env.ts)', () => {
+describe('DOC-33 / DOC-44 - Validação de Variáveis de Ambiente (src/config/env.ts)', () => {
   describe('Tabela de Casos loadEnv', () => {
     it('lança erro quando NODE_ENV=production e JWT_SECRET não está definido', () => {
       expect(() =>
@@ -29,7 +30,7 @@ describe('DOC-33 - Validação de Variáveis de Ambiente (src/config/env.ts)', (
       ).toThrowError(/JWT_SECRET/);
     });
 
-    it('valida com sucesso quando NODE_ENV=production, JWT_SECRET tem 32+ caracteres e DATABASE_URL está definida', () => {
+    it('valida com sucesso quando NODE_ENV=production, JWT_SECRET tem 32+ caracteres, DATABASE_URL está definida e Google não está configurado (sem GOOGLE_TOKEN_ENCRYPTION_KEY)', () => {
       const secret32 = 'a'.repeat(32);
       const loaded = loadEnv({
         NODE_ENV: 'production',
@@ -40,6 +41,7 @@ describe('DOC-33 - Validação de Variáveis de Ambiente (src/config/env.ts)', (
       expect(loaded.NODE_ENV).toBe('production');
       expect(loaded.JWT_SECRET).toBe(secret32);
       expect(loaded.DATABASE_URL).toBe('postgresql://postgres:postgres@localhost:5432/docsobs');
+      expect(loaded.google).toBeNull();
     });
 
     it('lança erro quando NODE_ENV=production e DATABASE_URL não está definida', () => {
@@ -100,6 +102,71 @@ describe('DOC-33 - Validação de Variáveis de Ambiente (src/config/env.ts)', (
         GOOGLE_REDIRECT_URI: '',
       });
       expect(envEmpty.google).toBeNull();
+    });
+
+    it('DOC-44: lança erro quando NODE_ENV=production, Google está configurado e GOOGLE_TOKEN_ENCRYPTION_KEY está ausente', () => {
+      expect(() =>
+        loadEnv({
+          NODE_ENV: 'production',
+          DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/docsobs',
+          JWT_SECRET: 'a'.repeat(32),
+          GOOGLE_CLIENT_ID: 'prod-client-id',
+          GOOGLE_CLIENT_SECRET: 'prod-client-secret',
+          GOOGLE_REDIRECT_URI: 'https://docsobs.example.com/api/v1/calendar/google/callback',
+        })
+      ).toThrowError(/GOOGLE_TOKEN_ENCRYPTION_KEY/);
+    });
+
+    it('DOC-44: aceita GOOGLE_TOKEN_ENCRYPTION_KEY com 32 bytes em base64 e base64url em produção com Google configurado', () => {
+      const keyBase64 = crypto.randomBytes(32).toString('base64');
+      const keyBase64Url = crypto.randomBytes(32).toString('base64url');
+
+      const loadedB64 = loadEnv({
+        NODE_ENV: 'production',
+        DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/docsobs',
+        JWT_SECRET: 'a'.repeat(32),
+        GOOGLE_CLIENT_ID: 'prod-client-id',
+        GOOGLE_CLIENT_SECRET: 'prod-client-secret',
+        GOOGLE_REDIRECT_URI: 'https://docsobs.example.com/api/v1/calendar/google/callback',
+        GOOGLE_TOKEN_ENCRYPTION_KEY: keyBase64,
+      });
+      expect(loadedB64.GOOGLE_TOKEN_ENCRYPTION_KEY).toBe(keyBase64);
+
+      const loadedB64Url = loadEnv({
+        NODE_ENV: 'production',
+        DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/docsobs',
+        JWT_SECRET: 'a'.repeat(32),
+        GOOGLE_CLIENT_ID: 'prod-client-id',
+        GOOGLE_CLIENT_SECRET: 'prod-client-secret',
+        GOOGLE_REDIRECT_URI: 'https://docsobs.example.com/api/v1/calendar/google/callback',
+        GOOGLE_TOKEN_ENCRYPTION_KEY: keyBase64Url,
+      });
+      expect(loadedB64Url.GOOGLE_TOKEN_ENCRYPTION_KEY).toBe(keyBase64Url);
+    });
+
+    it('DOC-44: lança erro quando GOOGLE_TOKEN_ENCRYPTION_KEY decodifica para 31 bytes (sem vazar a chave)', () => {
+      const key31 = crypto.randomBytes(31).toString('base64');
+      let errorMessage = '';
+      try {
+        loadEnv({
+          NODE_ENV: 'development',
+          GOOGLE_TOKEN_ENCRYPTION_KEY: key31,
+        });
+      } catch (error) {
+        errorMessage = error instanceof Error ? error.message : String(error);
+      }
+
+      expect(errorMessage).toContain('GOOGLE_TOKEN_ENCRYPTION_KEY');
+      expect(errorMessage).not.toContain(key31);
+    });
+
+    it('DOC-44: gera chave efêmera aleatória de 32 bytes quando GOOGLE_TOKEN_ENCRYPTION_KEY está ausente em development/test', () => {
+      const env1 = loadEnv({ NODE_ENV: 'development' });
+      const env2 = loadEnv({ NODE_ENV: 'test' });
+
+      expect(Buffer.from(env1.GOOGLE_TOKEN_ENCRYPTION_KEY, 'base64').length).toBe(32);
+      expect(Buffer.from(env2.GOOGLE_TOKEN_ENCRYPTION_KEY, 'base64').length).toBe(32);
+      expect(env1.GOOGLE_TOKEN_ENCRYPTION_KEY).not.toBe(env2.GOOGLE_TOKEN_ENCRYPTION_KEY);
     });
 
     it('não expõe o valor do segredo na mensagem de erro quando o segredo é inválido', () => {
@@ -244,6 +311,31 @@ describe('DOC-33 - Validação de Variáveis de Ambiente (src/config/env.ts)', (
       expect(result.stderr).toContain('JWT_SECRET');
       expect(result.stderr).not.toContain('    at ');
     });
-  });
 
+    it('DOC-44: aborta no boot com código 1 quando NODE_ENV=production, Google está configurado e GOOGLE_TOKEN_ENCRYPTION_KEY está ausente', () => {
+      const backendDir = path.resolve(__dirname, '..');
+      const result = spawnSync(
+        process.execPath,
+        ['--import', 'tsx', '-e', 'import("./src/config/env.ts")'],
+        {
+          cwd: backendDir,
+          env: {
+            ...process.env,
+            NODE_ENV: 'production',
+            JWT_SECRET: 'a'.repeat(32),
+            DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/docsobs',
+            GOOGLE_CLIENT_ID: 'prod-id',
+            GOOGLE_CLIENT_SECRET: 'prod-secret',
+            GOOGLE_REDIRECT_URI: 'https://docsobs.example.com/callback',
+            GOOGLE_TOKEN_ENCRYPTION_KEY: '',
+          },
+          encoding: 'utf8',
+        }
+      );
+
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('GOOGLE_TOKEN_ENCRYPTION_KEY');
+      expect(result.stderr).not.toContain('    at ');
+    });
+  });
 });
