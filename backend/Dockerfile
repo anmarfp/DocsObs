@@ -29,7 +29,7 @@ COPY package.json package-lock.json* ./
 COPY prisma ./prisma/
 
 # Instala dependências de runtime e prisma CLI para deploy de migrações
-RUN npm ci --omit=dev && npm install prisma@^6.4.1 --omit=dev
+RUN npm ci --omit=dev && npm install --no-save "prisma@$(node -p "require('./package.json').devDependencies.prisma")"
 
 # Copia artefatos compilados do builder
 COPY --from=builder /app/dist ./dist
