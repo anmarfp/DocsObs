@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { AuditAction, Prisma } from '@prisma/client';
 import { prisma } from '../lib/prisma.js';
 import { AuthenticatedRequest } from '../types/index.js';
+import { addCivilDays, getStartOfCivilDayInTimeZone, parseCivilDate } from '../utils/date.js';
 
 const listAuditLogsQuerySchema = z.object({
   page: z
@@ -54,8 +55,10 @@ export async function listAuditLogs(
 
     if (query.startDate || query.endDate) {
       where.timestamp = {
-        ...(query.startDate && { gte: new Date(query.startDate) }),
-        ...(query.endDate && { lte: new Date(query.endDate) }),
+        ...(query.startDate && { gte: getStartOfCivilDayInTimeZone(query.startDate) }),
+        ...(query.endDate && {
+          lt: getStartOfCivilDayInTimeZone(addCivilDays(parseCivilDate(query.endDate), 1)),
+        }),
       };
     }
 

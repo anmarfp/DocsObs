@@ -18,7 +18,7 @@ import {
   DocumentFormValues,
 } from '../utils/documentValidation';
 import { buildCreateFormData, buildUpdateFormData, DocumentFormData } from '../utils/formDataHelper';
-import { toInputDateFormat } from '../utils/dateHelper';
+import { toInputDateFormat, toLocalInputDateFormat } from '../utils/dateHelper';
 import FileDropzone from './FileDropzone';
 
 interface DocumentFormModalProps {
@@ -168,7 +168,7 @@ export const DocumentFormModal: React.FC<DocumentFormModalProps> = ({
           title: '',
           categoryId: defaultCategory?.id ?? (categories.length > 0 ? categories[0].id : ''),
           issuingBody: '',
-          issueDate: toInputDateFormat(new Date()),
+          issueDate: toLocalInputDateFormat(new Date()),
           expirationDate: '',
           alertLeadDays: 30,
           responsibleName: '',
