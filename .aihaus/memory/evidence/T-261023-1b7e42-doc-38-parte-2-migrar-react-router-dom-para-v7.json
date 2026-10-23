@@ -1,0 +1,81 @@
+{
+  "schema": "aihaus.evidence.v1",
+  "verdict": "PASS",
+  "commit": "6fc734c",
+  "acceptance": [
+    {
+      "criterion": "`npm --prefix frontend audit --omit=dev` sem achados",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npm --prefix frontend audit --omit=dev (found 0 vulnerabilities)",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "criterion": "Rotas, redirecionamentos (ProtectedRoute, Navigate), links, query string e parâmetros funcionam como antes, cobertos pelos testes existentes",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npm --prefix frontend test (auth.test.tsx: ProtectedRoute -> /login, rota ADMIN bloqueada para OPERATIONAL, 404 em rota desconhecida, /documentos/:id a partir da agenda, useSearchParams em /configuracoes, NavLink aria-current; 46/46)",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "criterion": "`npm run test:unit`, `npm --prefix frontend run test:typecheck`, `npm run build:all` e `npm run test:e2e` verdes",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npm --prefix backend test (300/300)",
+          "exit_code": 0
+        },
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npm --prefix frontend test (46/46)",
+          "exit_code": 0
+        },
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npm --prefix frontend run test:typecheck",
+          "exit_code": 0
+        },
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npm run build:all",
+          "exit_code": 0
+        },
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npm run test:e2e (9 arquivos, 20/20)",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "criterion": "Judgment pass em contexto separado sem achado CRITICAL/HIGH aberto",
+      "status": "satisfied",
+      "executable": false,
+      "evidence": [
+        {
+          "rung": "written",
+          "detail": "Judgment pass pelo orquestrador Claude (contexto separado do autor Antigravity) sobre 6fc734c: bump restrito a react-router-dom 7.18.4 com dependencias transitivas esperadas da v7, nenhuma alteracao de rotas ou codigo de producao, testes novos com assercoes concretas para a tabela de casos. Verdict: ship, sem achados CRITICAL/HIGH."
+        }
+      ]
+    }
+  ]
+}
