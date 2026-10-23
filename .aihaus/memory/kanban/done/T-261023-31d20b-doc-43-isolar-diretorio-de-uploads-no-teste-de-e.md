@@ -11,10 +11,10 @@ DOC-43: `backend/tests/document-extraction.test.ts` deixa de depender do diretó
 
 ## Acceptance
 
-- [ ] `document-extraction.test.ts` usa um `UPLOAD_DIR` temporário próprio e não lê o diretório de uploads compartilhado
-- [ ] `npm --prefix backend test` passa 10 vezes seguidas sem falha
-- [ ] `npm run test:unit` e `npm --prefix frontend run test:typecheck` verdes
-- [ ] Judgment pass em contexto separado sem achado CRITICAL/HIGH aberto
+- [x] `document-extraction.test.ts` usa um `UPLOAD_DIR` temporário próprio e não lê o diretório de uploads compartilhado
+- [x] `npm --prefix backend test` passa 10 vezes seguidas sem falha
+- [x] `npm run test:unit` e `npm --prefix frontend run test:typecheck` verdes
+- [x] Judgment pass em contexto separado sem achado CRITICAL/HIGH aberto
 
 ## Context
 
@@ -37,5 +37,10 @@ DOC-43: `backend/tests/document-extraction.test.ts` deixa de depender do diretó
 ## Log
 
 - 2026-10-23 criado pelo orquestrador a partir do Linear DOC-43.
+- 2026-10-23 executor Antigravity (`agy -p` no shell do orquestrador) entregou 42a3d1d: UPLOAD_DIR temporario por suite via vi.hoisted + UPLOAD_DIR no env mockado, afterAll remove o diretorio, assercoes de isolamento (UPLOADS_DIR = dir temporario, contagem 0 antes e depois). Relatorio: 10 execucoes 300/300.
+- 2026-10-23 judgment pass do orquestrador Claude (contexto separado) sobre 42a3d1d: ship. Reexecucao: `npm --prefix backend test` 10x seguidas, todas 300/300; frontend 46/46; typecheck 0; escopo = so o arquivo de teste. E2E nao exigido (mudanca apenas de teste).
+- 2026-10-23 gotcha promovido em `.aihaus/memory/project/knowledge.md` (testes que inspecionam uploads precisam de UPLOAD_DIR proprio).
 
 ## Evidence
+
+Artifact: .aihaus/memory/evidence/T-261023-31d20b-doc-43-isolar-diretorio-de-uploads-no-teste-de-e.json

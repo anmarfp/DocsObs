@@ -26,6 +26,7 @@
 - Verified: scripts shell devem usar LF; `.gitattributes` força `eol=lf` em `*.sh`. Source: `.gitattributes` (reviewed 824aace).
 - Verified: `prisma` e `@prisma/client` estão fixados em `~6.12.0` de propósito: as versões 6.13 a 7.10 puxam `deepmerge-ts` vulnerável (GHSA-ggr8-5vv4-36mx) via `@prisma/config`, e a correção só existe na 7.10.1+/8.x (major). Não suba para 6.13+ sem migrar de major (DOC-38). Source: `backend/package.json` (reviewed 6a7514a).
 - Verified: na imagem de produção o CLI do Prisma é instalado global (`npm install -g prisma@<versão de devDependencies.prisma>`) depois de `npm ci --omit=dev --omit=optional`; `npm install <pkg>` local sem `--omit=dev` reifica todas as devDependencies na imagem, e com `--omit=dev` ignora o próprio `prisma` por ser devDependency. O `npx prisma migrate deploy` do entrypoint resolve o CLI global sem rede (DOC-38). Source: `backend/Dockerfile` (reviewed 6a7514a).
+- Verified: o Vitest roda os arquivos de teste do backend em paralelo e vários deles gravam no mesmo `UPLOADS_DIR` (padrão `./uploads`); um teste que inspeciona o conteúdo do diretório precisa do próprio `UPLOAD_DIR` temporário via `vi.hoisted` + `process.env.UPLOAD_DIR` (e, se houver mock do env, `UPLOAD_DIR` no objeto mockado), removido em `afterAll` (DOC-43). Source: `backend/tests/document-extraction.test.ts`, `backend/tests/upload-security.test.ts` (reviewed 42a3d1d).
 
 ## Useful code analogs
 

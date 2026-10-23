@@ -1,0 +1,75 @@
+{
+  "schema": "aihaus.evidence.v1",
+  "verdict": "PASS",
+  "commit": "42a3d1d",
+  "acceptance": [
+    {
+      "criterion": "`document-extraction.test.ts` usa um `UPLOAD_DIR` temporário próprio e não lê o diretório de uploads compartilhado",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "git diff --name-only origin/main HEAD (so backend/tests/document-extraction.test.ts + task)",
+          "exit_code": 0
+        },
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npm --prefix backend test (assercao expect(UPLOADS_DIR).toBe(path.resolve(TEST_UPLOAD_DIR)) e contagem 0 antes/depois passam)",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "criterion": "`npm --prefix backend test` passa 10 vezes seguidas sem falha",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "for i in 1..10: npm --prefix backend test (10/10 execucoes com 300/300)",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "criterion": "`npm run test:unit` e `npm --prefix frontend run test:typecheck` verdes",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npm --prefix backend test (300/300)",
+          "exit_code": 0
+        },
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npm --prefix frontend test (46/46)",
+          "exit_code": 0
+        },
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npm --prefix frontend run test:typecheck",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "criterion": "Judgment pass em contexto separado sem achado CRITICAL/HIGH aberto",
+      "status": "satisfied",
+      "executable": false,
+      "evidence": [
+        {
+          "rung": "written",
+          "detail": "Judgment pass pelo orquestrador Claude (contexto separado do autor Antigravity) sobre 42a3d1d: segue o padrao de upload-security.test.ts, nao altera codigo de producao, mantem todas as assercoes e acrescenta prova de isolamento. Verdict: ship, sem achados CRITICAL/HIGH."
+        }
+      ]
+    }
+  ]
+}
