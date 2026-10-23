@@ -4,6 +4,7 @@
 
 - Verified: a única topologia de implantação descrita é o Docker Compose com `postgres`, `backend` e `frontend`; o frontend é buildado com `VITE_API_URL=/api/v1` e o Nginx faz proxy de `/api/v1/*` para o backend. Source: `docker-compose.yml` (reviewed 824aace).
 - Unresolved: ambientes de homologação/produção, provedor e domínio não estão documentados no repositório.
+- Inferred candidate: produção planejada (não implementada) na Oracle Cloud Always Free (VM ARM A1.Flex, Ubuntu 24.04), com Caddy (HTTPS Let's Encrypt) na frente do compose, subdomínio DuckDNS, banco e API sem porta pública e backup diário via `pg_dump` + uploads (DOC-46, pedido do dono em 2026-10-23). Source: `docs/deploy/oracle-cloud.md`.
 
 ## Preconditions
 
