@@ -1,0 +1,99 @@
+{
+  "schema": "aihaus.evidence.v1",
+  "verdict": "PASS",
+  "commit": "1c93a8b",
+  "acceptance": [
+    {
+      "criterion": "Renovar um documento com vencimento atualiza o evento existente no Google Agenda, sem criar um novo",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npm --prefix backend test (document-transactions.test.ts: renewal success e P2002-then-success -> 1 sync 'update' apos commit; 278/278)",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "criterion": "Falha no Google nao bloqueia a renovacao (RN-007)",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npm --prefix backend test (document-transactions.test.ts: syncDocumentEvent rejeita -> 2xx, erro logado e nao propagado)",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "criterion": "O sync roda so apos o commit da transacao; uma renovacao que falha nao sincroniza",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npm --prefix backend test (document-transactions.test.ts: tx.document.update/tx.auditLog.create lancam e P2002 x3 -> 409, todos sem sync)",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "criterion": "RN-007 atualizada em `docs/PRD.md` e na memoria do projeto",
+      "status": "satisfied",
+      "executable": false,
+      "evidence": [
+        {
+          "rung": "written",
+          "detail": "RN-007 atualizada em docs/PRD.md (commit 1c93a8b) e em .aihaus/memory/project/business-rules.md (statement inclui renovacao + cenario Given/When/Then do DOC-42)."
+        }
+      ]
+    },
+    {
+      "criterion": "`npm run test:unit`, `npm --prefix frontend run test:typecheck`, `npm run build:all` e `npm run test:e2e` verdes",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npm run test:unit (278 backend + 41 frontend)",
+          "exit_code": 0
+        },
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npm --prefix frontend run test:typecheck",
+          "exit_code": 0
+        },
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npm run build:all",
+          "exit_code": 0
+        },
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npm run test:e2e (9 arquivos, 20/20 contra stack Docker real)",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "criterion": "Judgment pass em contexto separado sem achado CRITICAL/HIGH aberto",
+      "status": "satisfied",
+      "executable": false,
+      "evidence": [
+        {
+          "rung": "written",
+          "detail": "Judgment pass pelo orquestrador Claude (contexto separado do autor Antigravity) sobre 1c93a8b: sync apos commit no mesmo padrao nao bloqueante de updateDocument; syncDocumentEvent faz update com gcalEventId existente e insert quando nao ha evento; casos de falha sem sync; scope-check outside=[]. Verdict: ship, sem achados CRITICAL/HIGH."
+        }
+      ]
+    }
+  ]
+}

@@ -1059,6 +1059,18 @@ export async function renewDocument(
       return;
     }
 
+    // Dispara a sincronização automática com o Google Agenda após o commit da
+    // transação de renovação (RN-007). O `gcalEventId` existente é reutilizado
+    // por `syncDocumentEvent`, atualizando o evento sem duplicá-lo. Falha no
+    // sync nunca bloqueia a resposta de sucesso da renovação.
+    if (resultData.updatedDocument.expirationDate) {
+      try {
+        await syncDocumentEvent(resultData.updatedDocument, 'update');
+      } catch (error) {
+        console.error('Falha ao sincronizar evento no Google Agenda ao renovar documento:', error);
+      }
+    }
+
     res.status(200).json({
       message: 'Documento renovado com sucesso. A versão anterior foi arquivada no histórico.',
       document: resultData.updatedDocument,
