@@ -2,17 +2,34 @@ import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from 'vites
 import request from 'supertest';
 import fs from 'fs';
 import path from 'path';
+
+// Diretório de uploads isolado para esta suíte (definido antes de importar o app e o env),
+// evitando interferência de outros arquivos de teste que gravam em paralelo.
+const { TEST_UPLOAD_DIR } = vi.hoisted(() => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const nodePath = require('path') as typeof import('path');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const nodeOs = require('os') as typeof import('os');
+  const dir = nodePath.join(nodeOs.tmpdir(), `docsobs-doc43-${process.pid}-${Date.now()}`);
+  process.env.UPLOAD_DIR = dir;
+  return { TEST_UPLOAD_DIR: dir };
+});
+
+vi.mock('../src/config/env.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/config/env.js')>();
+  const env = {
+    ...actual.env,
+    UPLOAD_DIR: TEST_UPLOAD_DIR,
+    EXTRACTION_SERVICE_URL: 'http://localhost:8000',
+    EXTRACTION_TIMEOUT_MS: 5000,
+  };
+  return { ...actual, env };
+});
+
 import { Role, DocumentStatus, AuditAction } from '@prisma/client';
 import { app } from '../src/app.js';
 import { generateToken } from '../src/utils/jwt.js';
 import { UPLOADS_DIR } from '../src/services/storageService.js';
-
-vi.mock('../src/config/env.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../src/config/env.js')>();
-  const env = { ...actual.env, EXTRACTION_SERVICE_URL: 'http://localhost:8000', EXTRACTION_TIMEOUT_MS: 5000 };
-  return { ...actual, env };
-});
-
 import { env } from '../src/config/env.js';
 
 // Mock do Prisma
@@ -62,6 +79,11 @@ describe('Suíte de Integração do Serviço de Extração de Documentos', () =>
   beforeAll(() => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  afterAll(() => {
+    vi.restoreAllMocks();
+    fs.rmSync(TEST_UPLOAD_DIR, { recursive: true, force: true });
   });
 
   beforeEach(() => {
@@ -186,7 +208,9 @@ describe('Suíte de Integração do Serviço de Extração de Documentos', () =>
     });
 
     it('não grava nada no diretório de uploads durante a rota de extração', async () => {
+      expect(UPLOADS_DIR).toBe(path.resolve(TEST_UPLOAD_DIR));
       const filesBefore = fs.existsSync(UPLOADS_DIR) ? fs.readdirSync(UPLOADS_DIR) : [];
+      expect(filesBefore.length).toBe(0);
 
       const originalFetch = global.fetch;
       global.fetch = vi.fn().mockResolvedValue({
@@ -210,6 +234,7 @@ describe('Suíte de Integração do Serviço de Extração de Documentos', () =>
           .attach('attachment', validPdfBuffer, 'teste-memoria.pdf');
 
         const filesAfter = fs.existsSync(UPLOADS_DIR) ? fs.readdirSync(UPLOADS_DIR) : [];
+        expect(filesAfter.length).toBe(0);
         expect(filesAfter.length).toBe(filesBefore.length);
       } finally {
         global.fetch = originalFetch;
