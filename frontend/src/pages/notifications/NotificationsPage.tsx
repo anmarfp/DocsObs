@@ -28,8 +28,8 @@ export const NotificationsPage: React.FC = () => {
     setIsLoading(true);
     try {
       const [criticalRes, expiredRes] = await Promise.all([
-        documentService.getDocuments({ status: 'CRITICAL' }),
-        documentService.getDocuments({ status: 'EXPIRED' }),
+        documentService.getAllDocuments({ status: 'CRITICAL' }),
+        documentService.getAllDocuments({ status: 'EXPIRED' }),
       ]);
       setCriticalDocs(criticalRes.documents || []);
       setExpiredDocs(expiredRes.documents || []);

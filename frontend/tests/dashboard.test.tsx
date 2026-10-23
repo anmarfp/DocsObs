@@ -244,13 +244,15 @@ describe('Header — pendências dinâmicas', () => {
       .mockImplementation(async ({ status } = {}) => ({
         documents: status === 'CRITICAL' ? [critical] : [expired],
         total: 1,
+        page: 1,
+        limit: 100,
       }));
 
-    renderWithAuth(<Header onToggleSidebar={vi.fn()} sidebarOpen />);
+    renderWithAuth(<Header />);
 
     await waitFor(() => {
-      expect(getDocuments).toHaveBeenCalledWith({ status: 'CRITICAL' });
-      expect(getDocuments).toHaveBeenCalledWith({ status: 'EXPIRED' });
+      expect(getDocuments).toHaveBeenCalledWith({ status: 'CRITICAL', page: 1, limit: 100 });
+      expect(getDocuments).toHaveBeenCalledWith({ status: 'EXPIRED', page: 1, limit: 100 });
     });
     const pendingButton = screen.getByRole('button', { name: /Alertas e Pendências/i });
     expect(within(pendingButton).getByText('2')).toBeInTheDocument();

@@ -217,10 +217,11 @@ describe('DOC-37: Transações nas escritas de documentos e versão única por d
   // =========================================================================
   // Caso 3: renewal: first attempt throws P2002 then succeeds
   // =========================================================================
-  it('renewal: first attempt throws P2002 then succeeds -> 2xx, versionNumber from second attempt, no Google sync', async () => {
+  it('renewal: first attempt throws P2002 then succeeds -> 2xx, versionNumber from second attempt, Google sync ("update") after commit', async () => {
     const mockTx = getMockTx();
     (prisma.document.findUnique as any).mockResolvedValue(sampleDoc);
 
+    const timeline: string[] = [];
     let attempts = 0;
     (prisma.$transaction as any).mockImplementation(async (cb: any) => {
       attempts++;
@@ -237,7 +238,14 @@ describe('DOC-37: Transações nas escritas de documentos e versão única por d
         expirationDate: new Date('2027-01-10T00:00:00.000Z'),
       });
       mockTx.auditLog.create.mockResolvedValue({ id: 'audit-renew-3' });
-      return cb(mockTx);
+      const result = await cb(mockTx);
+      timeline.push('tx-committed');
+      return result;
+    });
+
+    (syncDocumentEvent as any).mockImplementation(async () => {
+      timeline.push('sync');
+      return { status: SyncStatus.SYNCED };
     });
 
     const res = await request(app)
@@ -251,7 +259,15 @@ describe('DOC-37: Transações nas escritas de documentos e versão única por d
     expect(res.status).toBe(200);
     expect(attempts).toBe(2);
     expect(res.body.previousVersionNumber).toBe(3); // max(2) + 1
-    expect(syncDocumentEvent).not.toHaveBeenCalled();
+    expect(timeline).toEqual(['tx-committed', 'sync']);
+    expect(syncDocumentEvent).toHaveBeenCalledTimes(1);
+    expect(syncDocumentEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: sampleDoc.id,
+        expirationDate: new Date('2027-01-10T00:00:00.000Z'),
+      }),
+      'update'
+    );
   });
 
   // =========================================================================
@@ -303,7 +319,7 @@ describe('DOC-37: Transações nas escritas de documentos e versão única por d
   // =========================================================================
   // Caso 5: renewal success
   // =========================================================================
-  it('renewal success -> version number = max+1, previous attachment preserved (not deleted), no Google sync', async () => {
+  it('renewal success -> version number = max+1, previous attachment preserved (not deleted), Google sync ("update") after commit', async () => {
     const mockTx = getMockTx();
     const oldFileName = `old-renew-success-${Date.now()}.pdf`;
     const oldFilePath = path.resolve(UPLOADS_DIR, oldFileName);
@@ -336,6 +352,11 @@ describe('DOC-37: Transações nas escritas de documentos e versão única por d
       return result;
     });
 
+    (syncDocumentEvent as any).mockImplementation(async () => {
+      timeline.push('sync');
+      return { status: SyncStatus.SYNCED };
+    });
+
     const res = await request(app)
       .post(`/api/v1/documents/${sampleDoc.id}/renew`)
       .set('Authorization', `Bearer ${adminToken}`)
@@ -348,15 +369,22 @@ describe('DOC-37: Transações nas escritas de documentos e versão única por d
 
     expect(res.status).toBe(200);
     expect(res.body.previousVersionNumber).toBe(6); // 5 + 1 = 6
-    expect(timeline).toEqual(['tx-committed']);
+    expect(timeline).toEqual(['tx-committed', 'sync']);
 
     // O anexo anterior NÃO foi deletado do disco e deleteUploadedFile NÃO foi chamado para ele (RN-002)
     expect(deleteSpy).not.toHaveBeenCalledWith(previousAttachmentUrl);
     expect(deleteSpy).not.toHaveBeenCalledWith(oldFileName);
     expect(fs.existsSync(oldFilePath)).toBe(true);
 
-    // Sync com Google Agenda não é disparado na renovação (R3)
-    expect(syncDocumentEvent).not.toHaveBeenCalled();
+    // Sync com Google Agenda é disparado após o commit da renovação (RN-007)
+    expect(syncDocumentEvent).toHaveBeenCalledTimes(1);
+    expect(syncDocumentEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: sampleDoc.id,
+        expirationDate: new Date('2027-01-10T00:00:00.000Z'),
+      }),
+      'update'
+    );
 
     // Limpeza
     if (fs.existsSync(oldFilePath)) fs.unlinkSync(oldFilePath);
@@ -364,6 +392,45 @@ describe('DOC-37: Transações nas escritas de documentos e versão única por d
       const generatedFile = path.resolve(UPLOADS_DIR, path.basename(res.body.document.attachmentUrl));
       if (fs.existsSync(generatedFile)) fs.unlinkSync(generatedFile);
     }
+  });
+
+  // =========================================================================
+  // Caso 5b: renewal: success but syncDocumentEvent rejects
+  // =========================================================================
+  it('renewal: success but syncDocumentEvent rejects -> 2xx, 1 sync call ("update"), error logged and not propagated', async () => {
+    const mockTx = getMockTx();
+    (prisma.document.findUnique as any).mockResolvedValue(sampleDoc);
+
+    mockTx.documentVersion.aggregate.mockResolvedValue({ _max: { versionNumber: 1 } });
+    mockTx.documentVersion.create.mockResolvedValue({ id: 'ver-2' });
+    mockTx.document.update.mockImplementation(async ({ data }: any) => ({
+      ...sampleDoc,
+      ...data,
+      expirationDate: new Date('2027-01-10T00:00:00.000Z'),
+    }));
+    mockTx.auditLog.create.mockResolvedValue({ id: 'audit-renew-sync-reject' });
+
+    (syncDocumentEvent as any).mockRejectedValue(new Error('Falha simulada na API do Google Agenda'));
+
+    const res = await request(app)
+      .post(`/api/v1/documents/${sampleDoc.id}/renew`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        issueDate: '2026-01-10',
+        expirationDate: '2027-01-10',
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.previousVersionNumber).toBe(2);
+    expect(syncDocumentEvent).toHaveBeenCalledTimes(1);
+    expect(syncDocumentEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: sampleDoc.id,
+        expirationDate: new Date('2027-01-10T00:00:00.000Z'),
+      }),
+      'update'
+    );
+    expect(console.error).toHaveBeenCalled();
   });
 
   // =========================================================================

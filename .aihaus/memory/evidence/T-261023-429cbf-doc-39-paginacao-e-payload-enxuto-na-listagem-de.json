@@ -1,0 +1,113 @@
+{
+  "schema": "aihaus.evidence.v1",
+  "verdict": "PASS",
+  "commit": "e9de1ad",
+  "acceptance": [
+    {
+      "criterion": "A listagem aceita `page`/`limit`, devolve no maximo `limit` itens (padrao 20, maximo 100) e informa `total`, `page` e `limit`",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npm --prefix backend test (document.test.ts: sem params -> 20/page=1/limit=20; page=2&limit=5 com 12 docs; limit=101/0, page=0/abc -> 400; page=99 -> []; RBAC; filtros+total; 285/285)",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "criterion": "A lista nao inclui o array `versions` nem a contagem de `auditLogs`; o detalhe do documento segue completo",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npm --prefix backend test (document.test.ts: payload enxuto sem versions e sem _count.auditLogs; detalhe completo)",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "criterion": "`EXPLAIN ANALYZE` da listagem padrao com 10k documentos e 200k linhas de auditoria abaixo de 200 ms, registrado em `docs/perf/`",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "docker exec -i doc39-review-pg psql -v ON_ERROR_STOP=1 < doc39-perf.sql (10k docs/30k versoes/200k audit_logs; EXPLAIN ANALYZE listagem padrao LIMIT 20: 0,080-0,096 ms; count 2,5 ms)",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "criterion": "A pagina de documentos navega entre paginas sem regressao nos filtros (busca, categoria, status, arquivados para ADMIN); header e central de pendencias continuam mostrando todas as pendencias",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npm --prefix frontend test (documents.test.tsx: navegacao entre paginas e reset para pagina 1 ao mudar filtros; dashboard.test.tsx: Header/Notificacoes agregam >100 pendencias; 44/44)",
+          "exit_code": 0
+        },
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npm run test:e2e (9 arquivos, 20/20 contra stack Docker real)",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "criterion": "`npm run test:unit`, `npm --prefix frontend run test:typecheck`, `npm run build:all` e `npm run test:e2e` verdes",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npm --prefix backend test (TZ=UTC 285/285 e TZ=America/Sao_Paulo 285/285)",
+          "exit_code": 0
+        },
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npm --prefix frontend test (44/44)",
+          "exit_code": 0
+        },
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npm --prefix frontend run test:typecheck",
+          "exit_code": 0
+        },
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npm run build:all",
+          "exit_code": 0
+        },
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npm run test:e2e (9 arquivos, 20/20)",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "criterion": "Judgment pass em contexto separado sem achado CRITICAL/HIGH aberto",
+      "status": "satisfied",
+      "executable": false,
+      "evidence": [
+        {
+          "rung": "written",
+          "detail": "Judgment pass pelo orquestrador Claude (contexto separado do autor Antigravity) sobre e9de1ad: paginacao validada por Zod com 400 via errorHandler, filtros e RBAC intactos, consumidores do array versions/_count inexistentes na lista, Header/Notificacoes usam getAllDocuments; scope-check outside=[]. Verdict: ship, sem achados CRITICAL/HIGH (1 LOW registrado no Log)."
+        }
+      ]
+    }
+  ]
+}

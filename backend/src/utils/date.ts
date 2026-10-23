@@ -65,3 +65,60 @@ export function getBusinessToday(now: Date = new Date()): Date {
 export function addCivilDays(civilDate: Date, days: number): Date {
   return new Date(civilDate.getTime() + days * MS_PER_DAY);
 }
+
+/**
+ * Normaliza uma string de data (`YYYY-MM-DD` ou ISO) ou `Date` para a data civil
+ * correspondente representada como meia-noite UTC (`YYYY-MM-DDT00:00:00.000Z`).
+ */
+export function parseCivilDate(input: string | Date): Date {
+  if (typeof input === 'string') {
+    const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(input.trim());
+    if (match) {
+      return new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+    }
+  }
+  const d = typeof input === 'string' ? new Date(input) : input;
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+}
+
+function getTimeZoneOffsetMs(instant: Date, timeZone: string): number {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(instant);
+
+  const get = (type: Intl.DateTimeFormatPartTypes): number =>
+    parseInt(parts.find((part) => part.type === type)!.value, 10);
+
+  const wallClockAsUtc = Date.UTC(
+    get('year'),
+    get('month') - 1,
+    get('day'),
+    get('hour') % 24,
+    get('minute'),
+    get('second')
+  );
+  const instantSecondsMs = Math.floor(instant.getTime() / 1000) * 1000;
+  return wallClockAsUtc - instantSecondsMs;
+}
+
+/**
+ * Retorna o instante UTC correspondente à meia-noite local (00:00:00.000) de uma
+ * data civil no fuso informado (padrão `APP_TIMEZONE`).
+ */
+export function getStartOfCivilDayInTimeZone(
+  civilDateInput: string | Date,
+  timeZone: string = getAppTimeZone()
+): Date {
+  const civilDate = parseCivilDate(civilDateInput);
+  const utcMidnightMs = civilDate.getTime();
+  const firstGuess = utcMidnightMs - getTimeZoneOffsetMs(new Date(utcMidnightMs), timeZone);
+  const secondOffset = getTimeZoneOffsetMs(new Date(firstGuess), timeZone);
+  return new Date(utcMidnightMs - secondOffset);
+}

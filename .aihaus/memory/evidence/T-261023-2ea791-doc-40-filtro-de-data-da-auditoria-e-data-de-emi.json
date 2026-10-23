@@ -1,0 +1,94 @@
+{
+  "schema": "aihaus.evidence.v1",
+  "verdict": "PASS",
+  "commit": "0e21e2f",
+  "acceptance": [
+    {
+      "criterion": "Auditoria com `startDate=D1&endDate=D2` inclui eventos de D1 00:00 ate D2 23:59:59.999 em `APP_TIMEZONE` (gte meia-noite local de D1, lt meia-noite local de D2+1)",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npm --prefix backend test (status-timezone.test.ts: tabela de casos 02:59:59Z/03:00Z/02:59:59Z+1/03:00Z+1, so startDate, so endDate, sem filtro; 284/284)",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "criterion": "Teste de fronteira da meia-noite do filtro da auditoria passa com `TZ=America/Sao_Paulo` e `TZ=UTC`",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "TZ=UTC npm --prefix backend test (284/284)",
+          "exit_code": 0
+        },
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "TZ=America/Sao_Paulo npm --prefix backend test (284/284)",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "criterion": "Data de emissao padrao no cadastro e na renovacao e o dia local do usuario, com teste simulando 22:00 em UTC-3",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npm --prefix frontend test (documents.test.tsx: relogio 2026-10-14T01:00Z em America/Sao_Paulo -> 2026-10-13 no cadastro e na renovacao; 42/42)",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "criterion": "`npm run test:unit`, `npm --prefix frontend run test:typecheck`, `npm run build:all` e `npm run test:e2e` verdes",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npm run test:unit (284 backend + 42 frontend)",
+          "exit_code": 0
+        },
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npm --prefix frontend run test:typecheck",
+          "exit_code": 0
+        },
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npm run build:all",
+          "exit_code": 0
+        },
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npm run test:e2e (9 arquivos, 20/20 contra stack Docker real)",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "criterion": "Judgment pass em contexto separado sem achado CRITICAL/HIGH aberto",
+      "status": "satisfied",
+      "executable": false,
+      "evidence": [
+        {
+          "rung": "written",
+          "detail": "Judgment pass pelo orquestrador Claude (contexto separado do autor Antigravity) sobre 0e21e2f: diff de auditController/date.ts/dateHelper e modais revisado, fluxo frontend->backend conferido (auditService envia ISO; parseCivilDate usa o prefixo YYYY-MM-DD), testes cobrem a tabela de casos; scope-check outside=[]. Verdict: ship, sem achados CRITICAL/HIGH."
+        }
+      ]
+    }
+  ]
+}
