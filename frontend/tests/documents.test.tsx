@@ -1,12 +1,25 @@
 import React from 'react';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import DocumentFilters from '@/features/documents/components/DocumentFilters';
+import DocumentFormModal from '@/features/documents/components/DocumentFormModal';
+import DocumentRenewModal from '@/features/documents/components/DocumentRenewModal';
 import FileDropzone from '@/features/documents/components/FileDropzone';
+import { companyService } from '@/features/documents/services/companyService';
+import { toInputDateFormat, toLocalInputDateFormat } from '@/features/documents/utils/dateHelper';
 import { buildCreateFormData, buildRenewFormData, buildUpdateFormData } from '@/features/documents/utils/formDataHelper';
 
-afterEach(cleanup);
+vi.mock('@/features/documents/services/companyService', () => ({
+  companyService: {
+    getConfig: vi.fn(),
+  },
+}));
+
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
 
 describe('DocumentFilters', () => {
   const props = () => ({ search: '', onSearchChange: vi.fn(), categoryId: '', onCategoryChange: vi.fn(), status: '' as const, onStatusChange: vi.fn(), includeArchived: false, onIncludeArchivedChange: vi.fn(), categories: [{ id: 'cat-1', name: 'Licenças', colorHex: null, description: null }], isAdmin: true, totalCount: 1 });
@@ -70,5 +83,78 @@ describe('formDataHelper', () => {
     const attachment = new File(['new'], 'novo.jpg', { type: 'image/jpeg' });
     const fd = buildRenewFormData({ issueDate: '2026-09-01', expirationDate: '', notes: '', attachment });
     expect(fd.get('issueDate')).toBe('2026-09-01'); expect(fd.get('expirationDate')).toBe(''); expect(fd.get('attachment')).toBe(attachment);
+  });
+});
+
+describe('DOC-40 - data de emissão padrão usa o dia civil local do navegador', () => {
+  const categories = [{ id: 'cat-1', name: 'Licenças', colorHex: '#3b82f6', description: null }];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(companyService.getConfig).mockResolvedValue({
+      id: 'cfg-1',
+      notificationMode: 'ALL_ADMINS',
+      alertLeadDays: 30,
+      createdAt: '2026-10-13T00:00:00.000Z',
+      updatedAt: '2026-10-13T00:00:00.000Z',
+    });
+  });
+
+  it('às 22:00 em America/Sao_Paulo (2026-10-14T01:00:00Z) preenche 2026-10-13 no cadastro e na renovação', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-14T01:00:00Z'));
+
+    expect(toLocalInputDateFormat(new Date())).toBe('2026-10-13');
+    // Datas civis vindas da API em meia-noite UTC continuam intactas
+    expect(toInputDateFormat('2026-10-14T00:00:00.000Z')).toBe('2026-10-14');
+
+    const { unmount } = render(
+      <DocumentFormModal
+        isOpen={true}
+        onClose={vi.fn()}
+        onSuccess={vi.fn()}
+        onError={vi.fn()}
+        categories={categories}
+        documentToEdit={null}
+      />
+    );
+    await waitFor(() => expect(companyService.getConfig).toHaveBeenCalled());
+
+    const createIssueInput = screen.getByLabelText(/Data de Emissão/i) as HTMLInputElement;
+    expect(createIssueInput.value).toBe('2026-10-13');
+    unmount();
+
+    render(
+      <DocumentRenewModal
+        isOpen={true}
+        onClose={vi.fn()}
+        onSuccess={vi.fn()}
+        onError={vi.fn()}
+        document={{
+          id: 'doc-1',
+          title: 'Alvará',
+          categoryId: 'cat-1',
+          issuingBody: 'Prefeitura',
+          issueDate: '2025-10-13T00:00:00.000Z',
+          expirationDate: '2026-10-13T00:00:00.000Z',
+          alertLeadDays: 30,
+          status: 'CRITICAL',
+          responsibleName: null,
+          responsibleEmail: null,
+          attachmentUrl: null,
+          attachmentFilename: null,
+          fileSizeBytes: null,
+          fileMimeType: null,
+          notes: null,
+          isArchived: false,
+          createdById: 'u-1',
+          createdAt: '2025-10-13T00:00:00.000Z',
+          updatedAt: '2025-10-13T00:00:00.000Z',
+        }}
+      />
+    );
+
+    const renewIssueInput = screen.getByLabelText(/Nova Data de Emissão/i) as HTMLInputElement;
+    expect(renewIssueInput.value).toBe('2026-10-13');
   });
 });

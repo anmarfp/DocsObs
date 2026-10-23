@@ -2,12 +2,12 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vites
 import { DocumentStatus, Role } from '@prisma/client';
 
 /**
- * DOC-27 — regressão de fuso horário.
+ * DOC-27 / DOC-40 — regressão de fuso horário.
  *
- * `expirationDate` é data civil gravada como meia-noite UTC; "hoje" é a data civil no
- * fuso de negócio `APP_TIMEZONE` (padrão America/Sao_Paulo). Estes testes precisam
- * passar com o processo em qualquer fuso (rodar com TZ=America/Sao_Paulo, TZ=UTC e
- * TZ=Asia/Tokyo).
+ * `expirationDate` é data civil gravada como meia-noite UTC; "hoje" e o filtro de
+ * período da auditoria usam a data civil no fuso de negócio `APP_TIMEZONE` (padrão
+ * America/Sao_Paulo). Estes testes precisam passar com o processo em qualquer fuso
+ * (rodar com TZ=America/Sao_Paulo, TZ=UTC e TZ=Asia/Tokyo).
  */
 
 vi.mock('../src/config/env.js', async (importOriginal) => {
@@ -27,6 +27,10 @@ vi.mock('../src/lib/prisma.js', () => ({
     documentCategory: {
       findMany: vi.fn(),
     },
+    auditLog: {
+      count: vi.fn(),
+      findMany: vi.fn(),
+    },
     companyConfig: { findFirst: vi.fn() },
     user: { findMany: vi.fn() },
   },
@@ -37,14 +41,26 @@ import { prisma } from '../src/lib/prisma.js';
 import { calculateDocumentStatus, getDaysUntilExpiration } from '../src/services/statusService.js';
 import { recalculateAllStatuses } from '../src/services/cronService.js';
 import { getCalendarEvents } from '../src/controllers/calendarController.js';
+import { listAuditLogs } from '../src/controllers/auditController.js';
 import { getDashboardMetrics } from '../src/services/dashboardService.js';
-import { getBusinessToday, getCivilDateInTimeZone } from '../src/utils/date.js';
+import {
+  getBusinessToday,
+  getCivilDateInTimeZone,
+  getStartOfCivilDayInTimeZone,
+} from '../src/utils/date.js';
 
 const initialAppTimeZone = env.APP_TIMEZONE;
 
 /** Verifica se uma data satisfaz o filtro Prisma `{ gte, lte }`. */
 function inRange(range: { gte: Date; lte: Date }, date: Date): boolean {
   return date.getTime() >= range.gte.getTime() && date.getTime() <= range.lte.getTime();
+}
+
+/** Verifica se um instante satisfaz o filtro Prisma `{ gte?, lt? }` da auditoria. */
+function inHalfOpenRange(range: { gte?: Date; lt?: Date }, date: Date): boolean {
+  if (range.gte && date.getTime() < range.gte.getTime()) return false;
+  if (range.lt && date.getTime() >= range.lt.getTime()) return false;
+  return true;
 }
 
 describe('DOC-27 - datas civis em UTC e "hoje" no fuso de negócio', () => {
@@ -193,6 +209,71 @@ describe('DOC-27 - datas civis em UTC e "hoje" no fuso de negócio', () => {
     it('às 22:00 locais (01:00 UTC do dia seguinte) o dia civil ainda é hoje', async () => {
       const range = await getUpcomingRange('2026-08-31T01:00:00.000Z');
       expect(inRange(range, new Date('2026-08-30T00:00:00.000Z'))).toBe(true);
+    });
+  });
+
+  describe('auditoria (DOC-40): filtro de período por data civil em APP_TIMEZONE', () => {
+    async function getAuditWhereFor(query: Record<string, string>) {
+      (prisma.auditLog.count as any).mockResolvedValue(0);
+      (prisma.auditLog.findMany as any).mockResolvedValue([]);
+      const res: any = { status: vi.fn().mockReturnThis(), json: vi.fn().mockReturnThis() };
+      const next = vi.fn();
+      await listAuditLogs({ query } as any, res, next);
+      expect(next).not.toHaveBeenCalled();
+      return (prisma.auditLog.findMany as any).mock.calls[0][0].where as {
+        timestamp?: { gte?: Date; lt?: Date };
+      };
+    }
+
+    const boundaryCases: Array<{ timestamp: string; included: boolean }> = [
+      { timestamp: '2026-10-14T02:59:59Z', included: false },
+      { timestamp: '2026-10-14T03:00:00Z', included: true },
+      { timestamp: '2026-10-15T02:59:59Z', included: true },
+      { timestamp: '2026-10-15T03:00:00Z', included: false },
+    ];
+
+    it.each(boundaryCases)(
+      'startDate=2026-10-14&endDate=2026-10-14 -> evento $timestamp incluído=$included',
+      async ({ timestamp, included }) => {
+        const where = await getAuditWhereFor({ startDate: '2026-10-14', endDate: '2026-10-14' });
+        expect(where.timestamp).toEqual({
+          gte: new Date('2026-10-14T03:00:00.000Z'),
+          lt: new Date('2026-10-15T03:00:00.000Z'),
+        });
+        expect(inHalfOpenRange(where.timestamp!, new Date(timestamp))).toBe(included);
+      }
+    );
+
+    it('não aplica filtro de data quando startDate e endDate estão ausentes', async () => {
+      const where = await getAuditWhereFor({});
+      expect(where.timestamp).toBeUndefined();
+    });
+
+    it('aplica apenas o limite informado quando só startDate ou só endDate é enviado', async () => {
+      const startOnly = await getAuditWhereFor({ startDate: '2026-10-14' });
+      expect(startOnly.timestamp).toEqual({
+        gte: new Date('2026-10-14T03:00:00.000Z'),
+      });
+      expect(startOnly.timestamp?.lt).toBeUndefined();
+
+      vi.clearAllMocks();
+      const endOnly = await getAuditWhereFor({ endDate: '2026-10-14' });
+      expect(endOnly.timestamp).toEqual({
+        lt: new Date('2026-10-15T03:00:00.000Z'),
+      });
+      expect(endOnly.timestamp?.gte).toBeUndefined();
+    });
+
+    it('getStartOfCivilDayInTimeZone respeita fusos distintos independentemente do TZ do host', () => {
+      expect(getStartOfCivilDayInTimeZone('2026-10-14', 'America/Sao_Paulo')).toEqual(
+        new Date('2026-10-14T03:00:00.000Z')
+      );
+      expect(getStartOfCivilDayInTimeZone('2026-10-14', 'UTC')).toEqual(
+        new Date('2026-10-14T00:00:00.000Z')
+      );
+      expect(getStartOfCivilDayInTimeZone('2026-10-14', 'Asia/Tokyo')).toEqual(
+        new Date('2026-10-13T15:00:00.000Z')
+      );
     });
   });
 });
