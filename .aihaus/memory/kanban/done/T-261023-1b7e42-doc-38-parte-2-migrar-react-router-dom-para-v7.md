@@ -10,10 +10,10 @@ DOC-38 (parte 2): migrar o frontend de `react-router-dom@6` para a v7 corrigida,
 
 ## Acceptance
 
-- [ ] `npm --prefix frontend audit --omit=dev` sem achados
-- [ ] Rotas, redirecionamentos (ProtectedRoute, Navigate), links, query string e parâmetros funcionam como antes, cobertos pelos testes existentes
-- [ ] `npm run test:unit`, `npm --prefix frontend run test:typecheck`, `npm run build:all` e `npm run test:e2e` verdes
-- [ ] Judgment pass em contexto separado sem achado CRITICAL/HIGH aberto
+- [x] `npm --prefix frontend audit --omit=dev` sem achados
+- [x] Rotas, redirecionamentos (ProtectedRoute, Navigate), links, query string e parâmetros funcionam como antes, cobertos pelos testes existentes
+- [x] `npm run test:unit`, `npm --prefix frontend run test:typecheck`, `npm run build:all` e `npm run test:e2e` verdes
+- [x] Judgment pass em contexto separado sem achado CRITICAL/HIGH aberto
 
 ## Context
 
@@ -35,5 +35,9 @@ DOC-38 (parte 2): migrar o frontend de `react-router-dom@6` para a v7 corrigida,
 ## Log
 
 - 2026-10-23 criado pelo orquestrador (DOC-38 parte 2).
+- 2026-10-23 executor Antigravity (`agy -p` no shell do orquestrador) entregou 6fc734c: react-router-dom ^6.28.2 -> ^7.18.4 (react-router 6.30.6 -> 7.18.4; lock troca @remix-run/router por cookie e set-cookie-parser). Nenhuma mudanca de codigo de producao foi necessaria (modo declarativo; sem rotas relativas sob splat; sem APIs removidas). Novo teste de roteamento em frontend/tests/auth.test.tsx.
+- 2026-10-23 judgment pass do orquestrador Claude (contexto separado) sobre 6fc734c: ship. Reexecucao: frontend audit --omit=dev 0, frontend 46/46, backend 300/300 (1a execucao falhou so no teste instavel DOC-43), typecheck 0, build 0, escopo = package.json, package-lock.json, auth.test.tsx; E2E 20/20.
 
 ## Evidence
+
+Artifact: .aihaus/memory/evidence/T-261023-1b7e42-doc-38-parte-2-migrar-react-router-dom-para-v7.json
