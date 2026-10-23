@@ -30,8 +30,7 @@ vi.mock('node-cron', () => ({
 // 4. Mock do Prisma Client
 const mockQueryRaw = vi.fn();
 const mockTransaction = vi.fn();
-const mockJobRunCreate = vi.fn();
-const mockJobRunDeleteMany = vi.fn();
+const mockJobRunCreateMany = vi.fn();
 vi.mock('../src/lib/prisma.js', () => ({
   prisma: {
     $transaction: (...args: any[]) => mockTransaction(...args),
@@ -40,8 +39,7 @@ vi.mock('../src/lib/prisma.js', () => ({
     user: { findMany: vi.fn(), findUnique: vi.fn() },
     document: { findMany: vi.fn(), findUnique: vi.fn(), update: vi.fn(), count: vi.fn() },
     jobRun: {
-      create: (...args: any[]) => mockJobRunCreate(...args),
-      deleteMany: (...args: any[]) => mockJobRunDeleteMany(...args),
+      createMany: (...args: any[]) => mockJobRunCreateMany(...args),
     },
   },
 }));
@@ -121,6 +119,9 @@ describe('DOC-31 - Agendamento in-process (node-cron) e envio real de alertas (n
             executionOrder.push('lock');
             return [{ locked: true }];
           }),
+          jobRun: {
+            createMany: vi.fn().mockResolvedValue({ count: 1 }),
+          },
         };
         return await callback(tx);
       });
@@ -204,6 +205,9 @@ describe('DOC-31 - Agendamento in-process (node-cron) e envio real de alertas (n
       mockTransaction.mockImplementation(async (callback: any) => {
         const tx = {
           $queryRaw: vi.fn().mockResolvedValue([{ locked: true }]),
+          jobRun: {
+            createMany: vi.fn().mockResolvedValue({ count: 1 }),
+          },
         };
         return await callback(tx);
       });
@@ -451,32 +455,34 @@ describe('DOC-31 - Agendamento in-process (node-cron) e envio real de alertas (n
       (prisma.companyConfig.findFirst as any).mockResolvedValue({ notificationMode: NotificationMode.ALL_ADMINS });
       (prisma.user.findMany as any).mockResolvedValue([admin]);
 
-      mockJobRunCreate.mockImplementation(async ({ data }: any) => {
-        const key = `${data.job}:${data.runDate.toISOString().slice(0, 10)}`;
-        if (claimedKeys.has(key)) {
-          const err: any = new Error('Unique constraint failed on the fields: (`job`,`run_date`)');
-          err.code = 'P2002';
-          throw err;
-        }
-        claimedKeys.add(key);
-        return { id: 'job-run-1', ...data, createdAt: new Date() };
-      });
-
-      mockJobRunDeleteMany.mockImplementation(async ({ where }: any) => {
-        const key = `${where.job}:${where.runDate.toISOString().slice(0, 10)}`;
-        claimedKeys.delete(key);
-        return { count: 1 };
-      });
-
       mockTransaction.mockImplementation(async (callback: any) => {
+        const txClaimedKeys: string[] = [];
         const tx = {
           $queryRaw: vi.fn().mockResolvedValue([{ locked: true }]),
           jobRun: {
-            create: (...args: any[]) => mockJobRunCreate(...args),
-            deleteMany: (...args: any[]) => mockJobRunDeleteMany(...args),
+            createMany: mockJobRunCreateMany.mockImplementation(async ({ data }: any) => {
+              const items = Array.isArray(data) ? data : [data];
+              let count = 0;
+              for (const item of items) {
+                const key = `${item.job}:${item.runDate.toISOString().slice(0, 10)}`;
+                if (!claimedKeys.has(key)) {
+                  claimedKeys.add(key);
+                  txClaimedKeys.push(key);
+                  count += 1;
+                }
+              }
+              return { count };
+            }),
           },
         };
-        return await callback(tx);
+        try {
+          return await callback(tx);
+        } catch (err) {
+          for (const key of txClaimedKeys) {
+            claimedKeys.delete(key);
+          }
+          throw err;
+        }
       });
     });
 
@@ -499,12 +505,15 @@ describe('DOC-31 - Agendamento in-process (node-cron) e envio real de alertas (n
           }),
         })
       );
-      expect(mockJobRunCreate).toHaveBeenCalledTimes(1);
-      expect(mockJobRunCreate).toHaveBeenCalledWith({
-        data: {
-          job: 'daily-digest',
-          runDate: new Date('2026-10-14T00:00:00.000Z'),
-        },
+      expect(mockJobRunCreateMany).toHaveBeenCalledTimes(1);
+      expect(mockJobRunCreateMany).toHaveBeenCalledWith({
+        data: [
+          {
+            job: 'daily-digest',
+            runDate: new Date('2026-10-14T00:00:00.000Z'),
+          },
+        ],
+        skipDuplicates: true,
       });
       expect(mockSendMailFn).toHaveBeenCalledTimes(1);
     });
@@ -532,7 +541,7 @@ describe('DOC-31 - Agendamento in-process (node-cron) e envio real de alertas (n
       expect(mockSendMailFn).toHaveBeenCalledTimes(1);
     });
 
-    it('duas execuções concorrentes no mesmo dia civil (segunda claim recebe P2002): envia exatamente 1 digest', async () => {
+    it('duas execuções concorrentes no mesmo dia civil (segunda claim retorna count 0): envia exatamente 1 digest', async () => {
       vi.useFakeTimers({ toFake: ['Date'] });
       vi.setSystemTime(new Date('2026-10-14T12:00:00.000Z'));
 
@@ -576,11 +585,13 @@ describe('DOC-31 - Agendamento in-process (node-cron) e envio real de alertas (n
         })
       );
       expect(mockSendMailFn).toHaveBeenCalledTimes(2);
-      expect(mockJobRunCreate).toHaveBeenNthCalledWith(1, {
-        data: { job: 'daily-digest', runDate: new Date('2026-10-13T00:00:00.000Z') },
+      expect(mockJobRunCreateMany).toHaveBeenNthCalledWith(1, {
+        data: [{ job: 'daily-digest', runDate: new Date('2026-10-13T00:00:00.000Z') }],
+        skipDuplicates: true,
       });
-      expect(mockJobRunCreate).toHaveBeenNthCalledWith(2, {
-        data: { job: 'daily-digest', runDate: new Date('2026-10-14T00:00:00.000Z') },
+      expect(mockJobRunCreateMany).toHaveBeenNthCalledWith(2, {
+        data: [{ job: 'daily-digest', runDate: new Date('2026-10-14T00:00:00.000Z') }],
+        skipDuplicates: true,
       });
     });
 
