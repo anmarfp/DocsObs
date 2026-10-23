@@ -1,0 +1,98 @@
+{
+  "schema": "aihaus.evidence.v1",
+  "verdict": "PASS",
+  "commit": "6a7514a",
+  "acceptance": [
+    {
+      "criterion": "`npm audit --omit=dev` no backend sem achados",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npm --prefix backend audit --omit=dev (found 0 vulnerabilities)",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "criterion": "`npm audit --omit=dev --audit-level=high` no frontend sem achados high/critical",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npm --prefix frontend audit --omit=dev --audit-level=high (restam so 2 moderate de react-router, tratados na parte 2)",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "criterion": "Lockfiles mudam so versoes de correcao dos pacotes afetados, sem bump major de dependencia direta",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "git diff --name-only origin/main HEAD (so backend/Dockerfile, backend/package.json, backend/package-lock.json, frontend/package-lock.json + task)",
+          "exit_code": 0
+        },
+        {
+          "rung": "written",
+          "detail": "Diretas: prisma/@prisma/client 6.19.3 -> ~6.12.0 (mesmo major 6; downgrade para sair da faixa vulneravel 6.13-7.10). Demais mudancas sao patches transitivos (express 4.22.3, body-parser 1.20.9, qs 6.16.1, proxy-addr 2.0.8, brace-expansion 2.1.7, follow-redirects 1.16.1). Nenhum bump de major."
+        }
+      ]
+    },
+    {
+      "criterion": "`npm run test:unit`, `npm --prefix frontend run test:typecheck`, `npm run build:all` e `npm run test:e2e` verdes",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npm --prefix backend test (300/300 apos merge do main)",
+          "exit_code": 0
+        },
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npm --prefix frontend test (45/45)",
+          "exit_code": 0
+        },
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npm --prefix frontend run test:typecheck",
+          "exit_code": 0
+        },
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npm run build:all",
+          "exit_code": 0
+        },
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npm run test:e2e (imagem nova; migrate deploy pelo CLI global; 9 arquivos, 20/20)",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "criterion": "Judgment pass em contexto separado sem achado CRITICAL/HIGH aberto",
+      "status": "satisfied",
+      "executable": false,
+      "evidence": [
+        {
+          "rung": "written",
+          "detail": "Judgment pass pelo orquestrador Claude (contexto separado dos autores Antigravity) sobre e9ad675 (achado HIGH: CLI vulneravel na imagem), eaffddb (achado HIGH: devDependencies na imagem, confirmado com docker build) e 6a7514a (ship: docker run --network none confirma prisma 6.12.0 global sem download, 0 devDependencies, requires de runtime ok). Sem achados CRITICAL/HIGH abertos."
+        }
+      ]
+    }
+  ]
+}
