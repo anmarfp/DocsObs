@@ -192,3 +192,13 @@ model GoogleOAuthToken {
 
   @@map("google_oauth_tokens")
 }
+
+model JobRun {
+  id        String   @id @default(uuid())
+  job       String
+  runDate   DateTime @db.Date @map("run_date")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([job, runDate])
+  @@map("job_runs")
+}

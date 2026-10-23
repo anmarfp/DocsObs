@@ -19,6 +19,7 @@ comportamento do código é anotado separadamente quando diverge.
 
 - Given um documento com vencimento em 10 dias e antecedência de 30 When o status é calculado Then o status é `CRITICAL`. Source: `backend/src/services/statusService.ts` (reviewed 824aace).
 - Verified: o recálculo em lote e o digest rodam diariamente às 00:00 em `APP_TIMEZONE` via `node-cron` in-process, sob `pg_try_advisory_xact_lock` (uma réplica por vez); `CRON_ENABLED=false` desliga. "Hoje" é a data civil em `APP_TIMEZONE` (padrão America/Sao_Paulo) e vencimentos são datas civis em meia-noite UTC (DOC-27, DOC-31). Source: `backend/src/services/scheduler.ts`, `backend/src/utils/date.ts` (reviewed 60daa31).
+- Verified: o Daily Digest sai no máximo uma vez por dia civil em `APP_TIMEZONE`, mesmo com várias réplicas: a execução reivindica `(job='daily-digest', run_date)` em `job_runs` (`UNIQUE(job, run_date)`, `createMany` com `skipDuplicates` dentro da transação do advisory lock) e pula o envio quando a claim já existe; exceção no envio desfaz a claim, `success: false` sem exceção a mantém. Com 0 documentos pendentes o e-mail não é enviado (decisão do dono em 2026-10-23, DOC-41). Source: `backend/src/services/scheduler.ts`, `backend/src/services/notificationService.ts` (reviewed acec922).
 
 ### RN-002 — Imutabilidade do histórico de renovações
 

@@ -85,7 +85,8 @@ export async function recalculateAllStatuses(baseDate?: Date): Promise<Recalcula
 }
 
 /**
- * Executa o job diário de Daily Digest consolidando documentos críticos e vencidos para administradores (RF-008).
+ * Executa o job diário de Daily Digest consolidando documentos críticos e vencidos para administradores (RF-008 / DOC-41).
+ * Quando não há documentos pendentes (total === 0), o envio é omitido sem contar como falha.
  */
 export async function runDailyDigestJob(baseDate?: Date) {
   const admins = await prisma.user.findMany({
