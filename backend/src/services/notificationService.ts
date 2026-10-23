@@ -138,7 +138,8 @@ export async function sendExpirationAlert(
 }
 
 /**
- * Dispara o Daily Digest consolidado para os administradores ativos (RF-008).
+ * Dispara o Daily Digest consolidado para os administradores ativos (RF-008 / DOC-41).
+ * Não envia o e-mail quando não há documentos pendentes (total === 0), sem contar como falha.
  */
 export async function sendDailyDigest(
   admins: Array<{ email: string; isActive?: boolean }>,
@@ -149,6 +150,19 @@ export async function sendDailyDigest(
     .map((admin) => admin.email.trim());
 
   const subject = `[DocsObs] Resumo Diário de Vencimentos (Daily Digest) - ${summary.total} documento(s) pendente(s)`;
+
+  if (summary.total === 0) {
+    console.log('[DocsObs] Daily Digest ignorado: 0 documento(s) pendente(s).');
+    return {
+      success: true,
+      dispatched: false,
+      recipients,
+      subject,
+      total: 0,
+      summary,
+      sentAt: new Date(),
+    };
+  }
 
   const bodyLines: string[] = [
     `Olá,`,

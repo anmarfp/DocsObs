@@ -1,0 +1,94 @@
+{
+  "schema": "aihaus.evidence.v1",
+  "verdict": "PASS",
+  "commit": "acec922",
+  "acceptance": [
+    {
+      "criterion": "Duas execucoes do job diario no mesmo dia civil em `APP_TIMEZONE`, em sequencia ou em paralelo, enviam o digest uma unica vez",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npm --prefix backend test (doc31-cron-email.test.ts: 1 execucao, 2 sequenciais, 2 concorrentes com claim count 0, 13/10 vs 14/10 local, throw seguido de nova execucao; 284/284)",
+          "exit_code": 0
+        },
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "tsx probe executeDailyJob x2 contra postgres:16-alpine descartavel apos migrate deploy (RUN1 skipped=false, RUN2 skipped=true, job_runs=1)",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "criterion": "Com 0 documentos pendentes o digest nao e enviado, coberto por teste",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npm --prefix backend test (doc31-cron-email.test.ts: 0 pendentes -> digest nao enviado, success=true, sem contar falha)",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "criterion": "A migration nova aplica em banco vazio via `prisma migrate deploy` (stack E2E)",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npm run test:e2e (stack Docker com volume novo: prisma migrate deploy aplica 20261023150000_add_job_runs; 9 arquivos, 20/20)",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "criterion": "`npm run test:unit`, `npm --prefix frontend run test:typecheck`, `npm run build:all` e `npm run test:e2e` verdes",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npm run test:unit (284 backend + 41 frontend)",
+          "exit_code": 0
+        },
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npm --prefix frontend run test:typecheck",
+          "exit_code": 0
+        },
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npm run build:all",
+          "exit_code": 0
+        },
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npm run test:e2e (9 arquivos, 20/20)",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "criterion": "Judgment pass em contexto separado sem achado CRITICAL/HIGH aberto",
+      "status": "satisfied",
+      "executable": false,
+      "evidence": [
+        {
+          "rung": "written",
+          "detail": "Judgment pass pelo orquestrador Claude (contexto separado dos autores Antigravity) sobre 946cd28 (rework solicitado: 3 achados MEDIUM/LOW) e acec922 (ship): claim via createMany skipDuplicates no client transacional, rollback em excecao, claim mantida em success=false e em total=0, CRON_ENABLED intacto; validado em PostgreSQL real; scope-check outside=[]. Sem achados CRITICAL/HIGH abertos."
+        }
+      ]
+    }
+  ]
+}

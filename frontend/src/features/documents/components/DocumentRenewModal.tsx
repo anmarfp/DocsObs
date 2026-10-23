@@ -8,7 +8,7 @@ import { Document } from '../types/document.types';
 import { documentService } from '../services/documentService';
 import { renewFormSchema, RenewFormValues } from '../utils/documentValidation';
 import { buildRenewFormData } from '../utils/formDataHelper';
-import { formatDate, toInputDateFormat } from '../utils/dateHelper';
+import { formatDate, toLocalInputDateFormat } from '../utils/dateHelper';
 import FileDropzone from './FileDropzone';
 
 interface DocumentRenewModalProps {
@@ -49,7 +49,7 @@ export const DocumentRenewModal: React.FC<DocumentRenewModalProps> = ({
       setSelectedFile(null);
       setUploadProgress(null);
       reset({
-        issueDate: toInputDateFormat(new Date()),
+        issueDate: toLocalInputDateFormat(new Date()),
         expirationDate: '',
         notes: '',
       });

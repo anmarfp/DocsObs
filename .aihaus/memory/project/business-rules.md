@@ -19,6 +19,7 @@ comportamento do código é anotado separadamente quando diverge.
 
 - Given um documento com vencimento em 10 dias e antecedência de 30 When o status é calculado Then o status é `CRITICAL`. Source: `backend/src/services/statusService.ts` (reviewed 824aace).
 - Verified: o recálculo em lote e o digest rodam diariamente às 00:00 em `APP_TIMEZONE` via `node-cron` in-process, sob `pg_try_advisory_xact_lock` (uma réplica por vez); `CRON_ENABLED=false` desliga. "Hoje" é a data civil em `APP_TIMEZONE` (padrão America/Sao_Paulo) e vencimentos são datas civis em meia-noite UTC (DOC-27, DOC-31). Source: `backend/src/services/scheduler.ts`, `backend/src/utils/date.ts` (reviewed 60daa31).
+- Verified: o Daily Digest sai no máximo uma vez por dia civil em `APP_TIMEZONE`, mesmo com várias réplicas: a execução reivindica `(job='daily-digest', run_date)` em `job_runs` (`UNIQUE(job, run_date)`, `createMany` com `skipDuplicates` dentro da transação do advisory lock) e pula o envio quando a claim já existe; exceção no envio desfaz a claim, `success: false` sem exceção a mantém. Com 0 documentos pendentes o e-mail não é enviado (decisão do dono em 2026-10-23, DOC-41). Source: `backend/src/services/scheduler.ts`, `backend/src/services/notificationService.ts` (reviewed acec922).
 
 ### RN-002 — Imutabilidade do histórico de renovações
 
@@ -77,12 +78,13 @@ comportamento do código é anotado separadamente quando diverge.
 
 - **status:** accepted
 - **domain:** software
-- **statement:** Criação, edição, arquivamento e exclusão de documentos com vencimento disparam sincronização com o Google Agenda do usuário que cadastrou o documento, registrando `gcal_sync_logs`; falha de sync nunca bloqueia a resposta.
-- **source**: `docs/ARCHITECTURE.md` (reviewed 5186755)
-- **last-reviewed:** 824aace
-- **links:** implements: [RF-005], relates: [], decided-by: [ADR-009]
+- **statement:** Criação, edição, renovação, arquivamento e exclusão de documentos com vencimento disparam sincronização com o Google Agenda do usuário que cadastrou o documento, registrando `gcal_sync_logs`; falha de sync nunca bloqueia a resposta.
+- **source**: `docs/ARCHITECTURE.md` (reviewed 5186755); renovação: decisão do dono em 2026-10-23 (DOC-42, Opção A)
+- **last-reviewed:** 1c93a8b
+- **links:** implements: [RF-005], relates: [DOC-42], decided-by: [ADR-009]
 
 - Given o criador do documento sem conta Google conectada When o documento é sincronizado Then um log `ERROR` é gravado. Source: `backend/src/services/gcalService.ts` (reviewed 824aace).
+- Verified: Given um documento com vencimento When é renovado com sucesso Then, após o commit da transação, `syncDocumentEvent(doc, 'update')` atualiza o evento existente (reusa `gcalEventId`); falha no Google não bloqueia o 200, e renovação que falha não sincroniza (DOC-42). Source: `backend/src/controllers/documentController.ts`, `backend/tests/document-transactions.test.ts` (reviewed 1c93a8b).
 
 ### RN-008 — Auditoria obrigatória
 

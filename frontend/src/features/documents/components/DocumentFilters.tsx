@@ -34,12 +34,13 @@ export const DocumentFilters: React.FC<DocumentFiltersProps> = ({
 
   // Debounce search input by 350ms
   useEffect(() => {
+    if (searchInput === search) return;
     const timer = setTimeout(() => {
       onSearchChange(searchInput);
     }, 350);
 
     return () => clearTimeout(timer);
-  }, [searchInput, onSearchChange]);
+  }, [searchInput, search, onSearchChange]);
 
   const hasActiveFilters = !!search || !!categoryId || !!status || (isAdmin && includeArchived);
 
