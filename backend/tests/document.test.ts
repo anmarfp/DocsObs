@@ -737,6 +737,163 @@ describe('Suíte de Testes Automatizados - Módulo de Documentos, Matriz de Core
           })
         );
       });
+
+      it('sem parâmetros: deve retornar no máximo 20 itens, page=1, limit=20, total completo e payload enxuto (sem versions e sem _count)', async () => {
+        const dataset = Array.from({ length: 25 }, (_, i) => {
+          const { versions: _v, auditLogs: _a, gcalSyncLogs: _g, ...slimDoc } = sampleDoc;
+          return {
+            ...slimDoc,
+            id: `doc-${i + 1}`,
+            title: `Documento ${i + 1}`,
+            createdAt: new Date(Date.UTC(2026, 7, 30 - i)),
+          };
+        });
+
+        (prisma.document.findMany as any).mockImplementation(async ({ skip = 0, take = 20 }: any) =>
+          dataset.slice(skip, skip + take)
+        );
+        (prisma.document.count as any).mockResolvedValue(dataset.length);
+
+        const res = await request(app)
+          .get('/api/v1/documents')
+          .set('Authorization', `Bearer ${adminToken}`);
+
+        expect(res.status).toBe(200);
+        expect(res.body.page).toBe(1);
+        expect(res.body.limit).toBe(20);
+        expect(res.body.total).toBe(25);
+        expect(res.body.documents).toHaveLength(20);
+        expect(res.body.documents[0].versions).toBeUndefined();
+        expect(res.body.documents[0]._count).toBeUndefined();
+
+        expect(prisma.document.findMany).toHaveBeenCalledWith({
+          where: { isArchived: false },
+          skip: 0,
+          take: 20,
+          include: {
+            category: true,
+            createdBy: {
+              select: { id: true, name: true, email: true, role: true },
+            },
+          },
+          orderBy: { createdAt: 'desc' },
+        });
+      });
+
+      it('com ?page=2&limit=5 e 12 documentos: deve retornar os itens 6..10 ordenados por createdAt desc e total=12', async () => {
+        const dataset = Array.from({ length: 12 }, (_, i) => {
+          const { versions: _v, auditLogs: _a, gcalSyncLogs: _g, ...slimDoc } = sampleDoc;
+          return {
+            ...slimDoc,
+            id: `doc-${i + 1}`,
+            title: `Documento ${i + 1}`,
+            createdAt: new Date(Date.UTC(2026, 7, 20 - i)),
+          };
+        });
+
+        (prisma.document.findMany as any).mockImplementation(async ({ skip, take }: any) =>
+          dataset.slice(skip, skip + take)
+        );
+        (prisma.document.count as any).mockResolvedValue(dataset.length);
+
+        const res = await request(app)
+          .get('/api/v1/documents?page=2&limit=5')
+          .set('Authorization', `Bearer ${adminToken}`);
+
+        expect(res.status).toBe(200);
+        expect(res.body.page).toBe(2);
+        expect(res.body.limit).toBe(5);
+        expect(res.body.total).toBe(12);
+        expect(res.body.documents.map((d: any) => d.id)).toEqual([
+          'doc-6',
+          'doc-7',
+          'doc-8',
+          'doc-9',
+          'doc-10',
+        ]);
+        expect(prisma.document.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            skip: 5,
+            take: 5,
+            orderBy: { createdAt: 'desc' },
+          })
+        );
+      });
+
+      it.each([
+        ['limit=101'],
+        ['limit=0'],
+        ['page=0'],
+        ['page=abc'],
+      ])('deve retornar 400 para parâmetros de paginação inválidos (?%s)', async (query) => {
+        const res = await request(app)
+          .get(`/api/v1/documents?${query}`)
+          .set('Authorization', `Bearer ${adminToken}`);
+
+        expect(res.status).toBe(400);
+        expect(res.body.error).toBe('VALIDATION_ERROR');
+        expect(prisma.document.findMany).not.toHaveBeenCalled();
+      });
+
+      it('com ?page=99 além do fim: deve retornar 200, documents=[] e total correto', async () => {
+        (prisma.document.findMany as any).mockResolvedValue([]);
+        (prisma.document.count as any).mockResolvedValue(12);
+
+        const res = await request(app)
+          .get('/api/v1/documents?page=99')
+          .set('Authorization', `Bearer ${adminToken}`);
+
+        expect(res.status).toBe(200);
+        expect(res.body).toEqual({
+          documents: [],
+          total: 12,
+          page: 99,
+          limit: 20,
+        });
+        expect(prisma.document.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            skip: 98 * 20,
+            take: 20,
+          })
+        );
+      });
+
+      it('filtros combinados com paginação: total deve refletir o mesmo where filtrado', async () => {
+        (prisma.document.findMany as any).mockResolvedValue([sampleDoc]);
+        (prisma.document.count as any).mockResolvedValue(7);
+
+        const res = await request(app)
+          .get(`/api/v1/documents?categoryId=${validCategoryId}&status=CRITICAL&search=Receita&page=2&limit=5`)
+          .set('Authorization', `Bearer ${adminToken}`);
+
+        expect(res.status).toBe(200);
+        expect(res.body.total).toBe(7);
+        expect(res.body.page).toBe(2);
+        expect(res.body.limit).toBe(5);
+
+        const expectedWhere = {
+          isArchived: false,
+          categoryId: validCategoryId,
+          status: DocumentStatus.CRITICAL,
+          OR: [
+            { title: { contains: 'Receita', mode: 'insensitive' } },
+            { issuingBody: { contains: 'Receita', mode: 'insensitive' } },
+            { responsibleName: { contains: 'Receita', mode: 'insensitive' } },
+            { notes: { contains: 'Receita', mode: 'insensitive' } },
+          ],
+        };
+
+        expect(prisma.document.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: expectedWhere,
+            skip: 5,
+            take: 5,
+          })
+        );
+        expect(prisma.document.count).toHaveBeenCalledWith({
+          where: expectedWhere,
+        });
+      });
     });
 
     describe('Detalhes (GET /api/v1/documents/:id)', () => {

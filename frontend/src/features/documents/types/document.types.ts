@@ -122,9 +122,13 @@ export interface DocumentFilterParams {
   categoryId?: string;
   status?: DocumentStatus | '';
   includeArchived?: boolean;
+  page?: number;
+  limit?: number;
 }
 
 export interface DocumentListResponse {
   documents: Document[];
   total: number;
+  page: number;
+  limit: number;
 }
