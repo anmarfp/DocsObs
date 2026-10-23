@@ -375,6 +375,43 @@ export async function listDocuments(
 
     const { categoryId, status, search, includeArchived } = req.query;
 
+    const paginationSchema = z.object({
+      page: z.preprocess(
+        (val) =>
+          val === undefined
+            ? 1
+            : typeof val === 'number'
+              ? val
+              : typeof val === 'string' && val.trim() !== ''
+                ? Number(val)
+                : NaN,
+        z
+          .number({ invalid_type_error: 'O parâmetro page deve ser um número válido.' })
+          .int('O parâmetro page deve ser um número inteiro.')
+          .min(1, 'O parâmetro page deve ser maior ou igual a 1.')
+      ),
+      limit: z.preprocess(
+        (val) =>
+          val === undefined
+            ? 20
+            : typeof val === 'number'
+              ? val
+              : typeof val === 'string' && val.trim() !== ''
+                ? Number(val)
+                : NaN,
+        z
+          .number({ invalid_type_error: 'O parâmetro limit deve ser um número válido.' })
+          .int('O parâmetro limit deve ser um número inteiro.')
+          .min(1, 'O parâmetro limit deve estar entre 1 e 100.')
+          .max(100, 'O parâmetro limit deve estar entre 1 e 100.')
+      ),
+    });
+
+    const { page, limit } = paginationSchema.parse({
+      page: req.query.page,
+      limit: req.query.limit,
+    });
+
     const where: Prisma.DocumentWhereInput = {};
 
     // Regra RBAC para documentos arquivados:
@@ -411,19 +448,17 @@ export async function listDocuments(
       }
     }
 
+    const skip = (page - 1) * limit;
+
     const [documents, total] = await Promise.all([
       prisma.document.findMany({
         where,
+        skip,
+        take: limit,
         include: {
           category: true,
           createdBy: {
             select: { id: true, name: true, email: true, role: true },
-          },
-          versions: {
-            orderBy: { versionNumber: 'desc' },
-          },
-          _count: {
-            select: { versions: true, auditLogs: true },
           },
         },
         orderBy: { createdAt: 'desc' },
@@ -434,6 +469,8 @@ export async function listDocuments(
     res.status(200).json({
       documents,
       total,
+      page,
+      limit,
     });
   } catch (error) {
     next(error);

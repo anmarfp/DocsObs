@@ -48,11 +48,11 @@ export const documentService = {
   },
 
   /**
-   * List documents with optional filters (search, categoryId, status, includeArchived).
-   * Note: The backend returns exactly { documents, total }.
+   * List documents with optional filters (search, categoryId, status, includeArchived, page, limit).
+   * Note: The backend returns { documents, total, page, limit }.
    */
   getDocuments: async (params?: DocumentFilterParams): Promise<DocumentListResponse> => {
-    const cleanParams: Record<string, string | boolean> = {};
+    const cleanParams: Record<string, string | boolean | number> = {};
     if (params) {
       if (params.search && params.search.trim()) {
         cleanParams.search = params.search.trim();
@@ -66,12 +66,54 @@ export const documentService = {
       if (params.includeArchived !== undefined) {
         cleanParams.includeArchived = params.includeArchived;
       }
+      if (params.page !== undefined) {
+        cleanParams.page = params.page;
+      }
+      if (params.limit !== undefined) {
+        cleanParams.limit = params.limit;
+      }
     }
 
     const response = await api.get<DocumentListResponse>('/documents', {
       params: cleanParams,
     });
     return response.data;
+  },
+
+  /**
+   * Percorre páginas com limit=100 até alcançar o total retornado pelo servidor.
+   * Usado por consumidores que precisam da coleção completa de um filtro pequeno/indexado (ex.: pendências).
+   */
+  getAllDocuments: async (
+    params?: Omit<DocumentFilterParams, 'page' | 'limit'>
+  ): Promise<DocumentListResponse> => {
+    const pageLimit = 100;
+    let currentPage = 1;
+    const allDocuments: Document[] = [];
+    let total = 0;
+
+    while (true) {
+      const response = await documentService.getDocuments({
+        ...params,
+        page: currentPage,
+        limit: pageLimit,
+      });
+      const pageDocs = response.documents || [];
+      allDocuments.push(...pageDocs);
+      total = response.total ?? allDocuments.length;
+
+      if (allDocuments.length >= total || pageDocs.length === 0) {
+        break;
+      }
+      currentPage += 1;
+    }
+
+    return {
+      documents: allDocuments,
+      total,
+      page: 1,
+      limit: pageLimit,
+    };
   },
 
   /**

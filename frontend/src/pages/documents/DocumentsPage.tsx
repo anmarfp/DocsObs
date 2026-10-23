@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, RefreshCw, AlertTriangle, Download } from 'lucide-react';
+import { Plus, RefreshCw, AlertTriangle, Download, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Document, DocumentCategory, DocumentStatus } from '@/features/documents/types/document.types';
 import { documentService } from '@/features/documents/services/documentService';
@@ -24,6 +24,8 @@ export const DocumentsPage: React.FC = () => {
   // State: Data
   const [documents, setDocuments] = useState<Document[]>([]);
   const [totalCount, setTotalCount] = useState<number>(0);
+  const [page, setPage] = useState<number>(1);
+  const [limit] = useState<number>(20);
   const [categories, setCategories] = useState<DocumentCategory[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -33,6 +35,26 @@ export const DocumentsPage: React.FC = () => {
   const [categoryId, setCategoryId] = useState<string>('');
   const [status, setStatus] = useState<DocumentStatus | ''>('');
   const [includeArchived, setIncludeArchived] = useState<boolean>(false);
+
+  const handleSearchChange = useCallback((val: string) => {
+    setSearch(val);
+    setPage(1);
+  }, []);
+
+  const handleCategoryChange = useCallback((val: string) => {
+    setCategoryId(val);
+    setPage(1);
+  }, []);
+
+  const handleStatusChange = useCallback((val: DocumentStatus | '') => {
+    setStatus(val);
+    setPage(1);
+  }, []);
+
+  const handleIncludeArchivedChange = useCallback((val: boolean) => {
+    setIncludeArchived(val);
+    setPage(1);
+  }, []);
 
   // State: Modals
   const [isCreateOpen, setIsCreateOpen] = useState<boolean>(false);
@@ -61,6 +83,8 @@ export const DocumentsPage: React.FC = () => {
         categoryId: categoryId || undefined,
         status: status || undefined,
         includeArchived: isAdmin ? includeArchived : false,
+        page,
+        limit,
       });
 
       setDocuments(data.documents || []);
@@ -72,7 +96,7 @@ export const DocumentsPage: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [search, categoryId, status, includeArchived, isAdmin, toastError]);
+  }, [search, categoryId, status, includeArchived, page, limit, isAdmin, toastError]);
 
   // Initial loads and re-fetch when filters change
   useEffect(() => {
@@ -134,6 +158,8 @@ export const DocumentsPage: React.FC = () => {
     }
   };
 
+  const totalPages = Math.max(1, Math.ceil(totalCount / limit));
+
   return (
     <div className="space-y-6">
       {/* Toast Notifications */}
@@ -186,13 +212,13 @@ export const DocumentsPage: React.FC = () => {
       {/* Filter and Search Bar */}
       <DocumentFilters
         search={search}
-        onSearchChange={setSearch}
+        onSearchChange={handleSearchChange}
         categoryId={categoryId}
-        onCategoryChange={setCategoryId}
+        onCategoryChange={handleCategoryChange}
         status={status}
-        onStatusChange={setStatus}
+        onStatusChange={handleStatusChange}
         includeArchived={includeArchived}
-        onIncludeArchivedChange={setIncludeArchived}
+        onIncludeArchivedChange={handleIncludeArchivedChange}
         categories={categories}
         isAdmin={isAdmin}
         totalCount={totalCount}
@@ -227,6 +253,36 @@ export const DocumentsPage: React.FC = () => {
         onDelete={handleOpenDelete}
         onDownloadAttachment={handleDownloadAttachment}
       />
+
+      {/* Server-Side Pagination Bar */}
+      {totalCount > 0 && (
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-card px-6 py-4 flex items-center justify-between text-xs">
+          <span className="text-slate-500">
+            Página <strong>{page}</strong> de <strong>{totalPages}</strong> ({totalCount} documento(s))
+          </span>
+
+          <div className="flex items-center space-x-2">
+            <button
+              type="button"
+              disabled={page <= 1 || isLoading}
+              onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+              className="btn-secondary text-xs py-1.5 px-3"
+            >
+              <ChevronLeft className="w-3.5 h-3.5 mr-1" />
+              Anterior
+            </button>
+            <button
+              type="button"
+              disabled={page >= totalPages || isLoading}
+              onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
+              className="btn-secondary text-xs py-1.5 px-3"
+            >
+              Próxima
+              <ChevronRight className="w-3.5 h-3.5 ml-1" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Create / Edit Document Modal */}
       <DocumentFormModal
