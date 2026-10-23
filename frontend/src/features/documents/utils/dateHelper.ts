@@ -50,3 +50,14 @@ export function toInputDateFormat(dateString?: string | Date | null): string {
     return '';
   }
 }
+
+/**
+ * Formata um Date como YYYY-MM-DD usando o ano, mês e dia do fuso local do navegador.
+ */
+export function toLocalInputDateFormat(date: Date = new Date()): string {
+  if (isNaN(date.getTime())) return '';
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
