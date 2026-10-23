@@ -30,6 +30,8 @@ vi.mock('node-cron', () => ({
 // 4. Mock do Prisma Client
 const mockQueryRaw = vi.fn();
 const mockTransaction = vi.fn();
+const mockJobRunCreate = vi.fn();
+const mockJobRunDeleteMany = vi.fn();
 vi.mock('../src/lib/prisma.js', () => ({
   prisma: {
     $transaction: (...args: any[]) => mockTransaction(...args),
@@ -37,6 +39,10 @@ vi.mock('../src/lib/prisma.js', () => ({
     companyConfig: { findFirst: vi.fn() },
     user: { findMany: vi.fn(), findUnique: vi.fn() },
     document: { findMany: vi.fn(), findUnique: vi.fn(), update: vi.fn(), count: vi.fn() },
+    jobRun: {
+      create: (...args: any[]) => mockJobRunCreate(...args),
+      deleteMany: (...args: any[]) => mockJobRunDeleteMany(...args),
+    },
   },
 }));
 
@@ -398,6 +404,266 @@ describe('DOC-31 - Agendamento in-process (node-cron) e envio real de alertas (n
 
       expect(result.body).toContain('30/08/2026');
       expect(result.body).not.toContain('29/08/2026');
+    });
+  });
+
+  describe('DOC-41 - Idempotência do Daily Digest por dia civil (job_runs) e omissão com 0 pendentes', () => {
+    const admin = { id: 'admin-1', email: 'admin@docsobs.com', role: Role.ADMIN, isActive: true };
+    const pendingDocs = [
+      {
+        id: 'doc-p1',
+        title: 'Doc Pendente 1',
+        expirationDate: new Date('2026-10-15T00:00:00.000Z'),
+        alertLeadDays: 30,
+        status: DocumentStatus.CRITICAL,
+        isArchived: false,
+      },
+      {
+        id: 'doc-p2',
+        title: 'Doc Pendente 2',
+        expirationDate: new Date('2026-10-10T00:00:00.000Z'),
+        alertLeadDays: 30,
+        status: DocumentStatus.EXPIRED,
+        isArchived: false,
+      },
+      {
+        id: 'doc-p3',
+        title: 'Doc Pendente 3',
+        expirationDate: new Date('2026-10-20T00:00:00.000Z'),
+        alertLeadDays: 30,
+        status: DocumentStatus.CRITICAL,
+        isArchived: false,
+      },
+    ];
+
+    let claimedKeys: Set<string>;
+
+    beforeEach(() => {
+      claimedKeys = new Set<string>();
+      (env as any).APP_TIMEZONE = 'America/Sao_Paulo';
+      (env as any).smtp = {
+        host: 'smtp.example.com',
+        port: 587,
+        secure: false,
+        from: 'DocsObs <alertas@docsobs.com>',
+      };
+
+      (prisma.companyConfig.findFirst as any).mockResolvedValue({ notificationMode: NotificationMode.ALL_ADMINS });
+      (prisma.user.findMany as any).mockResolvedValue([admin]);
+
+      mockJobRunCreate.mockImplementation(async ({ data }: any) => {
+        const key = `${data.job}:${data.runDate.toISOString().slice(0, 10)}`;
+        if (claimedKeys.has(key)) {
+          const err: any = new Error('Unique constraint failed on the fields: (`job`,`run_date`)');
+          err.code = 'P2002';
+          throw err;
+        }
+        claimedKeys.add(key);
+        return { id: 'job-run-1', ...data, createdAt: new Date() };
+      });
+
+      mockJobRunDeleteMany.mockImplementation(async ({ where }: any) => {
+        const key = `${where.job}:${where.runDate.toISOString().slice(0, 10)}`;
+        claimedKeys.delete(key);
+        return { count: 1 };
+      });
+
+      mockTransaction.mockImplementation(async (callback: any) => {
+        const tx = {
+          $queryRaw: vi.fn().mockResolvedValue([{ locked: true }]),
+          jobRun: {
+            create: (...args: any[]) => mockJobRunCreate(...args),
+            deleteMany: (...args: any[]) => mockJobRunDeleteMany(...args),
+          },
+        };
+        return await callback(tx);
+      });
+    });
+
+    it('uma execução com 3 documentos pendentes: envia 1 digest', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date('2026-10-14T12:00:00.000Z'));
+
+      (prisma.document.findMany as any).mockResolvedValue(pendingDocs);
+      mockSendMailFn.mockResolvedValue({ messageId: 'digest-1' });
+
+      const result = await executeDailyJob();
+
+      expect(result).toEqual(
+        expect.objectContaining({
+          skipped: false,
+          digestResult: expect.objectContaining({
+            success: true,
+            dispatched: true,
+            total: 3,
+          }),
+        })
+      );
+      expect(mockJobRunCreate).toHaveBeenCalledTimes(1);
+      expect(mockJobRunCreate).toHaveBeenCalledWith({
+        data: {
+          job: 'daily-digest',
+          runDate: new Date('2026-10-14T00:00:00.000Z'),
+        },
+      });
+      expect(mockSendMailFn).toHaveBeenCalledTimes(1);
+    });
+
+    it('duas execuções sequenciais no mesmo dia civil com 3 pendentes: envia exatamente 1 digest', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date('2026-10-14T03:00:05.000Z')); // 14/10 00:00:05 em America/Sao_Paulo
+
+      (prisma.document.findMany as any).mockResolvedValue(pendingDocs);
+      mockSendMailFn.mockResolvedValue({ messageId: 'digest-seq-1' });
+
+      const firstRun = await executeDailyJob();
+
+      // Segunda réplica dispara segundos depois no mesmo dia civil
+      vi.setSystemTime(new Date('2026-10-14T03:00:12.000Z'));
+      const secondRun = await executeDailyJob();
+
+      expect(firstRun).toEqual(
+        expect.objectContaining({
+          skipped: false,
+          digestResult: expect.objectContaining({ dispatched: true, total: 3 }),
+        })
+      );
+      expect(secondRun).toEqual({ skipped: true });
+      expect(mockSendMailFn).toHaveBeenCalledTimes(1);
+    });
+
+    it('duas execuções concorrentes no mesmo dia civil (segunda claim recebe P2002): envia exatamente 1 digest', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date('2026-10-14T12:00:00.000Z'));
+
+      (prisma.document.findMany as any).mockResolvedValue(pendingDocs);
+      mockSendMailFn.mockResolvedValue({ messageId: 'digest-conc-1' });
+
+      const [runA, runB] = await Promise.all([executeDailyJob(), executeDailyJob()]);
+
+      const outcomes = [runA, runB];
+      const sentRuns = outcomes.filter((r) => 'skipped' in r && r.skipped === false);
+      const skippedRuns = outcomes.filter((r) => 'skipped' in r && r.skipped === true);
+
+      expect(sentRuns).toHaveLength(1);
+      expect(skippedRuns).toHaveLength(1);
+      expect(mockSendMailFn).toHaveBeenCalledTimes(1);
+    });
+
+    it('execuções em 2026-10-14T02:30Z (13/10 local) e 2026-10-14T03:30Z (14/10 local) com pendentes em ambas: envia 2 digests', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      (prisma.document.findMany as any).mockResolvedValue(pendingDocs);
+      mockSendMailFn.mockResolvedValue({ messageId: 'digest-tz' });
+
+      // 2026-10-14T02:30:00Z = 2026-10-13 23:30:00 em America/Sao_Paulo (dia civil 2026-10-13)
+      vi.setSystemTime(new Date('2026-10-14T02:30:00.000Z'));
+      const runDay13 = await executeDailyJob();
+
+      // 2026-10-14T03:30:00Z = 2026-10-14 00:30:00 em America/Sao_Paulo (dia civil 2026-10-14)
+      vi.setSystemTime(new Date('2026-10-14T03:30:00.000Z'));
+      const runDay14 = await executeDailyJob();
+
+      expect(runDay13).toEqual(
+        expect.objectContaining({
+          skipped: false,
+          digestResult: expect.objectContaining({ dispatched: true, total: 3 }),
+        })
+      );
+      expect(runDay14).toEqual(
+        expect.objectContaining({
+          skipped: false,
+          digestResult: expect.objectContaining({ dispatched: true, total: 3 }),
+        })
+      );
+      expect(mockSendMailFn).toHaveBeenCalledTimes(2);
+      expect(mockJobRunCreate).toHaveBeenNthCalledWith(1, {
+        data: { job: 'daily-digest', runDate: new Date('2026-10-13T00:00:00.000Z') },
+      });
+      expect(mockJobRunCreate).toHaveBeenNthCalledWith(2, {
+        data: { job: 'daily-digest', runDate: new Date('2026-10-14T00:00:00.000Z') },
+      });
+    });
+
+    it('uma execução com 0 documentos pendentes: envia 0 digests e não contabiliza como falha', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date('2026-10-14T12:00:00.000Z'));
+
+      const consoleErrorSpy = vi.spyOn(console, 'error');
+      (prisma.document.findMany as any).mockResolvedValue([]);
+
+      const result = await executeDailyJob();
+
+      expect(result).toEqual(
+        expect.objectContaining({
+          skipped: false,
+          digestResult: expect.objectContaining({
+            success: true,
+            dispatched: false,
+            total: 0,
+          }),
+        })
+      );
+      expect(mockSendMailFn).not.toHaveBeenCalled();
+      expect(consoleErrorSpy).not.toHaveBeenCalled();
+    });
+
+    it('envio lança exceção (throw) na primeira execução, segunda execução no mesmo dia envia o digest', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date('2026-10-14T12:00:00.000Z'));
+
+      // Na 1ª execução: document.findMany no recalculateAllStatuses retorna pendingDocs,
+      // mas na 2ª chamada (dentro de runDailyDigestJob) lança exceção inesperada.
+      (prisma.document.findMany as any)
+        .mockResolvedValueOnce(pendingDocs)
+        .mockRejectedValueOnce(new Error('Erro inesperado ao montar digest'))
+        .mockResolvedValue(pendingDocs);
+
+      mockSendMailFn.mockResolvedValue({ messageId: 'digest-after-throw' });
+
+      const firstRun = await executeDailyJob();
+      expect(firstRun).toEqual({ error: 'Erro inesperado ao montar digest' });
+      expect(mockSendMailFn).toHaveBeenCalledTimes(0);
+
+      // Segunda execução no mesmo dia civil deve conseguir adquirir a claim e enviar
+      const secondRun = await executeDailyJob();
+      expect(secondRun).toEqual(
+        expect.objectContaining({
+          skipped: false,
+          digestResult: expect.objectContaining({
+            success: true,
+            dispatched: true,
+            total: 3,
+          }),
+        })
+      );
+      expect(mockSendMailFn).toHaveBeenCalledTimes(1);
+    });
+
+    it('mailService retorna success:false (sem lançar exceção): mantém a claim para evitar retry storm', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date('2026-10-14T12:00:00.000Z'));
+
+      (prisma.document.findMany as any).mockResolvedValue(pendingDocs);
+      mockSendMailFn.mockRejectedValue(new Error('Falha SMTP persistente'));
+
+      const firstRun = await executeDailyJob();
+      expect(firstRun).toEqual(
+        expect.objectContaining({
+          skipped: false,
+          digestResult: expect.objectContaining({
+            success: false,
+            dispatched: false,
+            total: 3,
+          }),
+        })
+      );
+      // 3 tentativas internas do mailService na 1ª execução
+      expect(mockSendMailFn).toHaveBeenCalledTimes(3);
+
+      // Segunda execução no mesmo dia encontra a claim e não tenta reenviar
+      const secondRun = await executeDailyJob();
+      expect(secondRun).toEqual({ skipped: true });
+      expect(mockSendMailFn).toHaveBeenCalledTimes(3);
     });
   });
 });
