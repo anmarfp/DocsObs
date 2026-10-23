@@ -1,0 +1,136 @@
+{
+  "schema": "aihaus.evidence.v1",
+  "verdict": "PASS",
+  "commit": "597c468",
+  "acceptance": [
+    {
+      "criterion": "Nenhum `access_token`/`refresh_token` é gravado em texto puro no callback OAuth nem na renovação automática do token",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npm --prefix backend test (google-token-crypto.test.ts e google-auth.test.ts: callback grava enc:v1 diferente do texto puro; evento tokens atualiza so o campo alterado e cifrado; 312/312)",
+          "exit_code": 0
+        },
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "git grep googleOAuthToken/accessToken/refreshToken em backend/src (todas as ocorrencias em services/googleTokenStore.ts)",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "criterion": "Sync, revogação e status funcionam com tokens cifrados e com tokens legados em texto puro",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npm --prefix backend test (notification-gcal.test.ts e google-token-crypto.test.ts: sync com linha cifrada e legada, revogacao e status; chave errada/tag adulterada -> nao conectado sem logar valor)",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "criterion": "Linhas legadas são cifradas no boot de forma idempotente",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "tsx probe encryptLegacyGoogleTokens x2 contra postgres:16-alpine descartavel (run1 migrou 2, run2 migrou 0, decrypt u1 ok, colunas enc:v1)",
+          "exit_code": 0
+        },
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npm --prefix backend test (google-token-crypto.test.ts: backfill com 2 legadas + 1 cifrada atualiza 2, 2a execucao 0)",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "criterion": "Produção com integração Google configurada e sem `GOOGLE_TOKEN_ENCRYPTION_KEY` válida aborta o boot",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npm --prefix backend test (env.test.ts: producao + Google configurado sem chave -> erro de validacao; sem Google -> sobe; chave de 31 bytes -> erro)",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "criterion": "`.env.example`, `backend/.env.example`, `docker-compose.yml` e README documentam a chave e como gerá-la",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "JWT_SECRET=dummy docker compose config --quiet",
+          "exit_code": 0
+        },
+        {
+          "rung": "written",
+          "detail": "GOOGLE_TOKEN_ENCRYPTION_KEY documentada em .env.example e backend/.env.example (com o comando de geracao), repassada em docker-compose.yml e citada no README (commit 597c468)."
+        }
+      ]
+    },
+    {
+      "criterion": "`npm run test:unit`, `npm --prefix frontend run test:typecheck`, `npm run build:all` e `npm run test:e2e` verdes",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npm --prefix backend test (312/312; TZ=UTC 312/312)",
+          "exit_code": 0
+        },
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npm --prefix frontend test (46/46)",
+          "exit_code": 0
+        },
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npm --prefix frontend run test:typecheck",
+          "exit_code": 0
+        },
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npm run build:all",
+          "exit_code": 0
+        },
+        {
+          "rung": "verified",
+          "source": "tool",
+          "command": "npm run test:e2e (9 arquivos, 20/20)",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "criterion": "Judgment pass em contexto separado sem achado CRITICAL/HIGH aberto",
+      "status": "satisfied",
+      "executable": false,
+      "evidence": [
+        {
+          "rung": "written",
+          "detail": "Judgment pass pelo orquestrador Claude (contexto separado do autor Antigravity) sobre 597c468: AES-256-GCM com IV aleatorio e tag, validacao estrita do formato, chave exigida em producao com Google, acesso confinado ao store, logs sem valores (inclusive erros do googleapis reduzidos a message), backfill validado em PostgreSQL real. Verdict: ship, 2 achados LOW registrados no Log, sem CRITICAL/HIGH."
+        }
+      ]
+    }
+  ]
+}

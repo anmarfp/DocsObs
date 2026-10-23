@@ -11,6 +11,7 @@
 - Verified: o backend só inicia após o healthcheck do Postgres (`pg_isready`), e o frontend só após o healthcheck do backend (`/api/v1/health`). Source: `docker-compose.yml` (reviewed 824aace).
 - Verified: fora de desenvolvimento, `JWT_SECRET` e as senhas de seed precisam ser definidas — o README alerta que as credenciais de demonstração são apenas locais. Source: `README.md` (reviewed 824aace).
 - Verified: a sincronização com Google Agenda requer as variáveis `GOOGLE_*` e `FRONTEND_URL` corretas para o redirect do OAuth. Source: `docker-compose.yml` (reviewed 824aace).
+- Verified: com o Google configurado em produção, `GOOGLE_TOKEN_ENCRYPTION_KEY` precisa estar definida e estável entre deploys; perdê-la ou trocá-la obriga todos os usuários a reconectar a agenda (DOC-44). Source: `backend/src/config/env.ts` (reviewed 597c468).
 
 ## Release procedure
 
