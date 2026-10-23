@@ -23,6 +23,7 @@ export interface Env {
   readonly NODE_ENV: 'development' | 'test' | 'production';
   readonly JWT_SECRET: string;
   readonly JWT_EXPIRES_IN: string;
+  readonly GOOGLE_TOKEN_ENCRYPTION_KEY: string;
   readonly DATABASE_URL?: string;
   readonly PORT: number;
   readonly FRONTEND_URL: string;
@@ -37,6 +38,21 @@ export interface Env {
 }
 
 let processHasWarnedSecret = false;
+let processHasWarnedGoogleTokenKey = false;
+
+export function decodeEncryptionKey(raw: string): Buffer | null {
+  const trimmed = raw.trim();
+  if (!/^(?:[A-Za-z0-9+/]+={0,2}|[A-Za-z0-9_-]+={0,2})$/.test(trimmed) || trimmed.length % 4 === 1) {
+    return null;
+  }
+  const normalized = trimmed.replace(/-/g, '+').replace(/_/g, '/');
+  const padded = normalized + '='.repeat((4 - (normalized.length % 4)) % 4);
+  if (!/^[A-Za-z0-9+/]{43}=$/.test(padded)) {
+    return null;
+  }
+  const decoded = Buffer.from(padded, 'base64');
+  return decoded.length === 32 ? decoded : null;
+}
 
 const EnvSchema = z
   .object({
@@ -88,6 +104,10 @@ const EnvSchema = z
       return undefined;
     }, z.string().optional()),
     GOOGLE_REDIRECT_URI: z.preprocess((val) => {
+      if (typeof val === 'string' && val.trim() !== '') return val.trim();
+      return undefined;
+    }, z.string().optional()),
+    GOOGLE_TOKEN_ENCRYPTION_KEY: z.preprocess((val) => {
       if (typeof val === 'string' && val.trim() !== '') return val.trim();
       return undefined;
     }, z.string().optional()),
@@ -176,6 +196,25 @@ const EnvSchema = z
       }
     }
 
+    const isGoogleConfigured = setGoogle.length === 3;
+    if (data.GOOGLE_TOKEN_ENCRYPTION_KEY !== undefined) {
+      if (!decodeEncryptionKey(data.GOOGLE_TOKEN_ENCRYPTION_KEY)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['GOOGLE_TOKEN_ENCRYPTION_KEY'],
+          message:
+            'GOOGLE_TOKEN_ENCRYPTION_KEY deve codificar exatamente 32 bytes em base64 ou base64url.',
+        });
+      }
+    } else if (data.NODE_ENV === 'production' && isGoogleConfigured) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['GOOGLE_TOKEN_ENCRYPTION_KEY'],
+        message:
+          'GOOGLE_TOKEN_ENCRYPTION_KEY é obrigatória quando NODE_ENV=production e a integração Google está configurada.',
+      });
+    }
+
     if (data.SMTP_HOST) {
       if (!data.EMAIL_FROM) {
         ctx.addIssue({
@@ -233,6 +272,17 @@ export function loadEnv(
     }
   }
 
+  let googleTokenEncryptionKey = parsed.data.GOOGLE_TOKEN_ENCRYPTION_KEY;
+  if (!googleTokenEncryptionKey) {
+    googleTokenEncryptionKey = crypto.randomBytes(32).toString('base64');
+    if (parsed.data.NODE_ENV !== 'production' && !processHasWarnedGoogleTokenKey) {
+      console.warn(
+        '⚠️ [DocsObs] GOOGLE_TOKEN_ENCRYPTION_KEY não configurada. Chave temporária gerada; tokens OAuth salvos com ela não poderão ser lidos após um reinício do processo.'
+      );
+      processHasWarnedGoogleTokenKey = true;
+    }
+  }
+
   const google: GoogleConfig | null =
     parsed.data.GOOGLE_CLIENT_ID &&
     parsed.data.GOOGLE_CLIENT_SECRET &&
@@ -259,6 +309,7 @@ export function loadEnv(
     NODE_ENV: parsed.data.NODE_ENV,
     JWT_SECRET: jwtSecret,
     JWT_EXPIRES_IN: parsed.data.JWT_EXPIRES_IN,
+    GOOGLE_TOKEN_ENCRYPTION_KEY: googleTokenEncryptionKey,
     DATABASE_URL: parsed.data.DATABASE_URL,
     PORT: parsed.data.PORT,
     FRONTEND_URL: parsed.data.FRONTEND_URL,

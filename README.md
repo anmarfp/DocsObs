@@ -72,7 +72,7 @@ flowchart TD
 
 O provisionamento completo com banco de dados PostgreSQL, backend com migrações automáticas e frontend servido por Nginx pode ser realizado em um único comando (o seed é opcional e fica desabilitado por padrão — veja [Usuários Iniciais (Seed)](#-usuários-iniciais-seed)):
 
-> ⚠️ **Importante:** A variável de ambiente `JWT_SECRET` (mínimo de 32 caracteres) é obrigatória para `docker compose up`. Configure-a no arquivo `.env` (copiando `.env.example`) antes de iniciar os serviços.
+> ⚠️ **Importante:** A variável de ambiente `JWT_SECRET` (mínimo de 32 caracteres) é obrigatória para `docker compose up`. Configure-a no arquivo `.env` (copiando `.env.example`) antes de iniciar os serviços. Quando a integração com o Google Agenda (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` e `GOOGLE_REDIRECT_URI`) estiver configurada em produção, defina também `GOOGLE_TOKEN_ENCRYPTION_KEY` (32 bytes aleatórios codificados em base64 ou base64url, gerada com `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`), usada para criptografar em repouso (`AES-256-GCM`) os tokens OAuth do Google.
 
 ### 1. Clonar o repositório e subir os serviços:
 
@@ -129,6 +129,11 @@ npm install
   ```cmd
   copy .env.example backend\.env
   ```
+
+> 💡 **Criptografia de tokens OAuth do Google (`GOOGLE_TOKEN_ENCRYPTION_KEY`):** Os tokens `access_token` e `refresh_token` do Google Agenda são armazenados cifrados com `AES-256-GCM`. Em desenvolvimento e testes, se `GOOGLE_TOKEN_ENCRYPTION_KEY` estiver ausente, uma chave efêmera é gerada com aviso no console; para manter os tokens legíveis entre reinícios (e obrigatoriamente em produção quando a integração Google estiver ativa), gere uma chave de 32 bytes em base64:
+> ```bash
+> node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+> ```
 
 ### 3. Iniciar o PostgreSQL via Docker:
 

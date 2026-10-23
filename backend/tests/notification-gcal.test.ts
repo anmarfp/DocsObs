@@ -50,6 +50,7 @@ vi.mock('../src/lib/prisma.js', () => ({
 import { prisma } from '../src/lib/prisma.js';
 import { app } from '../src/app.js';
 import { generateToken } from '../src/utils/jwt.js';
+import { decryptSecret, ENCRYPTED_TOKEN_PREFIX } from '../src/utils/tokenCrypto.js';
 
 /**
  * Contrato do Passo 8. Estes imports são dinâmicos para que as verificações de
@@ -132,16 +133,16 @@ describe('Passo 8 - Notificações, cron e Google Calendar', () => {
       expect(recipients).toEqual(['responsavel@docsobs.com']);
     });
 
-    it('envia alerta crítico formatado com status CRITICAL e dados do documento', async () => {
-      const result = await notificationService.sendExpirationAlert(
+    it('envia alerta crítico formatado com status CRITICAL e dados do documento', () => {
+      return expect(notificationService.sendExpirationAlert(
         { ...documentFixture, status: DocumentStatus.CRITICAL } as any,
         ['admin1@docsobs.com'],
         true,
-      );
-
-      expect(result).toEqual(expect.objectContaining({ status: DocumentStatus.CRITICAL }));
-      expect(result).toEqual(expect.objectContaining({ recipients: ['admin1@docsobs.com'] }));
-      expect(result).toEqual(expect.objectContaining({ subject: expect.stringContaining(documentFixture.title) }));
+      )).resolves.toEqual(expect.objectContaining({
+        status: DocumentStatus.CRITICAL,
+        recipients: ['admin1@docsobs.com'],
+        subject: expect.stringContaining(documentFixture.title),
+      }));
     });
 
     it('envia alerta vencido formatado com status EXPIRED', async () => {
@@ -324,10 +325,6 @@ describe('Passo 8 - Notificações, cron e Google Calendar', () => {
     });
 
     it('busca o último evento ignorando tentativas ERROR na query (uma falha transitória não deve "esquecer" o evento real)', async () => {
-      // A consulta filtra status SYNCED/DELETED — uma linha ERROR (falha de rede,
-      // rate limit etc. após um SYNCED bem-sucedido) nunca chega a ser candidata,
-      // então a próxima sincronização continua enxergando o último evento real em
-      // vez de criar um duplicado via insert.
       (prisma.gCalSyncLog.findMany as any).mockResolvedValue([
         { id: 'log-1', documentId: documentFixture.id, gcalEventId: 'gcal-real-event-1', status: SyncStatus.SYNCED, lastSyncedAt: today },
       ]);
@@ -411,7 +408,7 @@ describe('Passo 8 - Notificações, cron e Google Calendar', () => {
       }));
     });
 
-    it('persiste a renovação automática do access_token quando o evento "tokens" da lib googleapis dispara', async () => {
+    it('persiste a renovação automática do access_token cifrada quando o evento "tokens" da lib googleapis dispara', async () => {
       mockEventsInsert.mockResolvedValue({ data: { id: 'gcal-real-event-1' } });
 
       await gcalService.syncDocumentEvent(documentFixture as any, 'create');
@@ -422,10 +419,14 @@ describe('Passo 8 - Notificações, cron e Google Calendar', () => {
       const newExpiry = Date.now() + 7200 * 1000;
       tokensListener({ access_token: 'novo-access-token', expiry_date: newExpiry });
 
-      expect(prisma.googleOAuthToken.update).toHaveBeenCalledWith({
-        where: { userId: documentFixture.createdById },
-        data: expect.objectContaining({ accessToken: 'novo-access-token', expiryDate: new Date(newExpiry) }),
-      });
+      expect(prisma.googleOAuthToken.update).toHaveBeenCalledTimes(1);
+      const updateCall = (prisma.googleOAuthToken.update as any).mock.calls[0][0];
+      expect(updateCall.where).toEqual({ userId: documentFixture.createdById });
+      expect(updateCall.data.accessToken.startsWith(ENCRYPTED_TOKEN_PREFIX)).toBe(true);
+      expect(updateCall.data.accessToken).not.toBe('novo-access-token');
+      expect(decryptSecret(updateCall.data.accessToken)).toBe('novo-access-token');
+      expect(updateCall.data.refreshToken).toBeUndefined();
+      expect(updateCall.data.expiryDate).toEqual(new Date(newExpiry));
     });
 
     it('sincroniza em lote todos os documentos ativos com vencimento e agrega os totais', async () => {

@@ -4,9 +4,8 @@ import { Role } from '@prisma/client';
 
 /**
  * Testes do fluxo de conexão OAuth por usuário com o Google Agenda (ADR-009 /
- * DOC-28, subtarefa 2). A lib `googleapis` e o `prisma` são mockados — nenhuma
- * chamada de rede real ao Google acontece aqui (isso fica para um teste manual
- * opcional contra credenciais reais, fora desta suíte).
+ * DOC-28, subtarefa 2; DOC-44 criptografia em repouso). A lib `googleapis` e o
+ * `prisma` são mockados — nenhuma chamada de rede real ao Google acontece aqui.
  */
 
 const mockGenerateAuthUrl = vi.fn();
@@ -51,6 +50,7 @@ import { env } from '../src/config/env.js';
 import { prisma } from '../src/lib/prisma.js';
 import { app } from '../src/app.js';
 import { generateToken, signOAuthState, verifyOAuthState } from '../src/utils/jwt.js';
+import { decryptSecret, ENCRYPTED_TOKEN_PREFIX } from '../src/utils/tokenCrypto.js';
 
 describe('Google Calendar OAuth - fluxo de conexão (DOC-28, subtarefa 2)', () => {
   const adminToken = generateToken({
@@ -176,7 +176,7 @@ describe('Google Calendar OAuth - fluxo de conexão (DOC-28, subtarefa 2)', () =
       expect(mockGetToken).not.toHaveBeenCalled();
     });
 
-    it('troca o code por tokens e cria o registro em GoogleOAuthToken na primeira conexão', async () => {
+    it('troca o code por tokens e cria o registro cifrado em GoogleOAuthToken na primeira conexão', async () => {
       configureGoogleEnv();
       const state = signOAuthState('admin-1');
       (prisma.googleOAuthToken.findUnique as any).mockResolvedValue(null);
@@ -197,17 +197,20 @@ describe('Google Calendar OAuth - fluxo de conexão (DOC-28, subtarefa 2)', () =
       expect(res.status).toBe(302);
       expect(res.headers.location).toBe('http://localhost:5173/configuracoes?google=connected');
       expect(mockGetToken).toHaveBeenCalledWith('auth-code');
-      expect(prisma.googleOAuthToken.upsert).toHaveBeenCalledWith(expect.objectContaining({
-        where: { userId: 'admin-1' },
-        create: expect.objectContaining({
-          userId: 'admin-1',
-          accessToken: 'access-token-1',
-          refreshToken: 'refresh-token-1',
-        }),
-      }));
+      expect(prisma.googleOAuthToken.upsert).toHaveBeenCalledTimes(1);
+
+      const upsertCall = (prisma.googleOAuthToken.upsert as any).mock.calls[0][0];
+      expect(upsertCall.where).toEqual({ userId: 'admin-1' });
+      expect(upsertCall.create.userId).toBe('admin-1');
+      expect(upsertCall.create.accessToken.startsWith(ENCRYPTED_TOKEN_PREFIX)).toBe(true);
+      expect(upsertCall.create.refreshToken.startsWith(ENCRYPTED_TOKEN_PREFIX)).toBe(true);
+      expect(upsertCall.create.accessToken).not.toBe('access-token-1');
+      expect(upsertCall.create.refreshToken).not.toBe('refresh-token-1');
+      expect(decryptSecret(upsertCall.create.accessToken)).toBe('access-token-1');
+      expect(decryptSecret(upsertCall.create.refreshToken)).toBe('refresh-token-1');
     });
 
-    it('ao reconectar, preserva o refreshToken existente quando o Google não devolve um novo', async () => {
+    it('ao reconectar, preserva o refreshToken existente quando o Google não devolve um novo e cifra o novo accessToken', async () => {
       configureGoogleEnv();
       const state = signOAuthState('admin-1');
       (prisma.googleOAuthToken.findUnique as any).mockResolvedValue({
@@ -229,7 +232,9 @@ describe('Google Calendar OAuth - fluxo de conexão (DOC-28, subtarefa 2)', () =
       expect(res.status).toBe(302);
       expect(res.headers.location).toBe('http://localhost:5173/configuracoes?google=connected');
       const upsertCall = (prisma.googleOAuthToken.upsert as any).mock.calls[0][0];
-      expect(upsertCall.update.accessToken).toBe('new-access');
+      expect(upsertCall.update.accessToken.startsWith(ENCRYPTED_TOKEN_PREFIX)).toBe(true);
+      expect(upsertCall.update.accessToken).not.toBe('new-access');
+      expect(decryptSecret(upsertCall.update.accessToken)).toBe('new-access');
       expect(upsertCall.update.refreshToken).toBeUndefined();
     });
 
