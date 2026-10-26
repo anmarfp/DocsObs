@@ -6,10 +6,11 @@
 #   scripts/restore.sh /var/backups/docsobs/AAAA-MM-DD          # pede para digitar RESTAURAR
 #   scripts/restore.sh /var/backups/docsobs/AAAA-MM-DD --yes    # sem pergunta
 #
-# O dump é restaurado num banco temporário e só então troca de nome com o banco
-# ativo, que fica guardado como <POSTGRES_DB>_anterior até a próxima restauração.
-# Assim o resultado é idêntico ao backup (sem tabelas de migrations mais novas) e
-# um dump inválido não toca o banco ativo.
+# Antes de mudar qualquer coisa, o estado atual é salvo com scripts/backup.sh em
+# <BACKUP_ROOT>/pre-restore-AAAAMMDD-HHMMSS (fora da retenção): para desfazer,
+# restaure esse diretório. O dump é carregado num banco temporário que só então
+# substitui o ativo, então o resultado é idêntico ao backup (sem tabelas de
+# migrations mais novas) e um dump inválido não toca o banco ativo.
 set -euo pipefail
 
 backup_dir="${1:?uso: scripts/restore.sh <diretório do backup> [--yes]}"
@@ -36,31 +37,34 @@ if [ "$confirm" != "--yes" ]; then
   fi
 fi
 
-trap 'echo "[restore] FALHOU (veja a última etapa acima). O backend ficou parado; após corrigir, suba com: ${compose[*]} up -d --wait backend" >&2' ERR
+snapshot="pre-restore-$(date +%Y%m%d-%H%M%S)"
+echo "[restore] 1/6 salvando o estado atual em ${BACKUP_ROOT:-/var/backups/docsobs}/$snapshot"
+scripts/backup.sh "$snapshot"
 
-echo "[restore] 1/5 parando o backend"
+trap 'echo "[restore] FALHOU (veja a última etapa acima). O backend pode ter ficado parado. Para voltar ao estado anterior: scripts/restore.sh ${BACKUP_ROOT:-/var/backups/docsobs}/$snapshot --yes" >&2' ERR
+
+echo "[restore] 2/6 parando o backend"
 "${compose[@]}" stop backend
 
-echo "[restore] 2/5 restaurando o dump em banco temporário"
+echo "[restore] 3/6 restaurando o dump em banco temporário"
 "${compose[@]}" exec -T postgres sh -c '
   dropdb -U "$POSTGRES_USER" --if-exists "${POSTGRES_DB}_restore" &&
   createdb -U "$POSTGRES_USER" "${POSTGRES_DB}_restore" &&
   pg_restore -U "$POSTGRES_USER" -d "${POSTGRES_DB}_restore" --no-owner --single-transaction --exit-on-error' \
   < "$backup_dir/db.dump"
 
-echo "[restore] 3/5 trocando o banco ativo pelo restaurado"
+echo "[restore] 4/6 substituindo o banco ativo pelo restaurado"
 "${compose[@]}" exec -T postgres sh -c '
-  dropdb -U "$POSTGRES_USER" --if-exists "${POSTGRES_DB}_anterior" &&
-  psql -U "$POSTGRES_USER" -d postgres -v ON_ERROR_STOP=1 -q -c "
-    ALTER DATABASE \"$POSTGRES_DB\" RENAME TO \"${POSTGRES_DB}_anterior\";
-    ALTER DATABASE \"${POSTGRES_DB}_restore\" RENAME TO \"$POSTGRES_DB\";"'
+  dropdb -U "$POSTGRES_USER" "$POSTGRES_DB" &&
+  psql -U "$POSTGRES_USER" -d postgres -v ON_ERROR_STOP=1 -q \
+    -c "ALTER DATABASE \"${POSTGRES_DB}_restore\" RENAME TO \"$POSTGRES_DB\""'
 
-echo "[restore] 4/5 substituindo os anexos"
+echo "[restore] 5/6 substituindo os anexos"
 "${compose[@]}" run --rm --no-deps -T --entrypoint sh backend -c \
   'find /app/uploads -mindepth 1 -delete && tar -C /app/uploads -xzf -' \
   < "$backup_dir/uploads.tar.gz"
 
-echo "[restore] 5/5 subindo o backend (aplica migrations pendentes)"
+echo "[restore] 6/6 subindo o backend (aplica migrations pendentes)"
 "${compose[@]}" up -d --wait backend
 
-echo "[restore] concluído a partir de $backup_dir."
+echo "[restore] concluído a partir de $backup_dir. Estado anterior salvo em ${BACKUP_ROOT:-/var/backups/docsobs}/$snapshot."

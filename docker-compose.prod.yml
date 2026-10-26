@@ -38,7 +38,9 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # Pasta, não o arquivo: um bind de arquivo único fica preso ao inode antigo
+      # quando o git pull reescreve o Caddyfile. Após mudá-lo: restart caddy.
+      - ./deploy:/etc/caddy:ro
       # caddy_data guarda os certificados emitidos; precisa persistir entre deploys.
       - caddy_data:/data
       - caddy_config:/config

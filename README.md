@@ -115,8 +115,8 @@ cp .env.production.example .env   # preencha DOMAIN, POSTGRES_PASSWORD, JWT_SECR
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build --wait
 ```
 
-- **Backup diário:** `scripts/backup.sh` grava `db.dump` (pg_dump) e `uploads.tar.gz` em `/var/backups/docsobs/AAAA-MM-DD/` e mantém os 7 mais recentes (`BACKUP_ROOT` e `KEEP` alteram o padrão).
-- **Restauração (destrutiva):** `scripts/restore.sh /var/backups/docsobs/AAAA-MM-DD` substitui banco e anexos pelo backup, após digitar `RESTAURAR` (ou `--yes`). O banco substituído fica guardado como `<POSTGRES_DB>_anterior` até a próxima restauração.
+- **Backup diário:** `scripts/backup.sh` grava `db.dump` (pg_dump) e `uploads.tar.gz` em `/var/backups/docsobs/AAAA-MM-DD/` e mantém os 7 mais recentes (`BACKUP_ROOT` e `KEEP` alteram o padrão). Os arquivos só são legíveis pelo dono.
+- **Restauração (destrutiva):** `scripts/restore.sh /var/backups/docsobs/AAAA-MM-DD` substitui banco e anexos pelo backup, após digitar `RESTAURAR` (ou `--yes`). Antes, o estado atual é salvo em `/var/backups/docsobs/pre-restore-AAAAMMDD-HHMMSS/` (fora da retenção; apague manualmente quando não precisar mais): para desfazer, restaure esse diretório.
 
 Passo a passo completo (conta Oracle, VM ARM, DNS, integrações e operação): [`docs/deploy/oracle-cloud.md`](docs/deploy/oracle-cloud.md).
 
