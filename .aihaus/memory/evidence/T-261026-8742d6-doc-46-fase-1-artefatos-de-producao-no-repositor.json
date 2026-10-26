@@ -1,0 +1,167 @@
+{
+  "schema": "aihaus.evidence.v1",
+  "verdict": "PASS",
+  "commit": "7709382",
+  "acceptance": [
+    {
+      "criterion": "`docker-compose.prod.yml` sobre o compose base publica no host apenas as portas 80 e 443 do `caddy`; `postgres`, `backend` e `frontend` ficam sem porta de host",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "ran",
+          "source": "tool",
+          "command": "docker compose -f docker-compose.yml -f docker-compose.prod.yml config --format json (DOMAIN=localhost): backend [], frontend [], postgres [], caddy [80:80, 443:443]",
+          "exit_code": 0,
+          "commit": "c1489b1"
+        },
+        {
+          "rung": "ran",
+          "source": "tool",
+          "command": "docker compose config --format json sem -f numa copia com .env do .env.production.example (COMPOSE_FILE, COMPOSE_PATH_SEPARATOR=:): so caddy publica 80/443",
+          "exit_code": 0,
+          "commit": "7709382"
+        }
+      ]
+    },
+    {
+      "criterion": "O override recusa subir sem `DOMAIN` e sem `POSTGRES_PASSWORD` explícita",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "ran",
+          "source": "tool",
+          "command": "docker compose -f docker-compose.yml -f docker-compose.prod.yml config -q sem DOMAIN -> exit 1 (required variable DOMAIN is missing a value); sem POSTGRES_PASSWORD -> exit 1; com ambos -> exit 0",
+          "exit_code": 0,
+          "commit": "c1489b1"
+        }
+      ]
+    },
+    {
+      "criterion": "Stack de produção local (`DOMAIN=localhost`) sobe com `--wait`; `https://localhost/` e `https://localhost/api/v1/health` respondem via Caddy e as portas 5432, 3001 e 3000 recusam conexão no host",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "ran",
+          "source": "tool",
+          "command": "docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build --wait (projeto docsobs-doc46, amd64)",
+          "exit_code": 0,
+          "commit": "7709382"
+        },
+        {
+          "rung": "ran",
+          "source": "tool",
+          "command": "smoke.sh: GET https://localhost/ 200, /api/v1/health {status:ok}, http:// 308 -> https://, 1 cabecalho HSTS, 5432/3001/3000 recusadas, login admin, documento com anexo criado e baixado 200 application/pdf 84B",
+          "exit_code": 0,
+          "commit": "7709382"
+        }
+      ]
+    },
+    {
+      "criterion": "As imagens de `backend` e `frontend` constroem em `linux/arm64` e o backend arm64 aplica as migrations, roda o seed e responde ao health",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "ran",
+          "source": "tool",
+          "command": "DOCKER_DEFAULT_PLATFORM=linux/arm64 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build (QEMU): build das imagens backend e frontend concluido; uname -m = aarch64 nos 4 conteineres",
+          "exit_code": 0,
+          "commit": "c1489b1"
+        },
+        {
+          "rung": "ran",
+          "source": "tool",
+          "command": "docker logs backend arm64: All migrations have been successfully applied; Seed concluido; docker exec backend wget /api/v1/health -> {status:ok}; smoke.sh arm64 com login e anexo 200",
+          "exit_code": 0,
+          "commit": "c1489b1"
+        },
+        {
+          "rung": "written",
+          "detail": "Os Dockerfiles e o build das imagens nao mudaram entre c1489b1 e 7709382 (git diff c1489b1 7709382 toca apenas scripts, docs, .env.production.example e o volume do caddy). Sob emulacao o backend leva ~72 s para ficar saudavel e estoura a janela do healthcheck; na VM ARM real nao ha emulacao."
+        }
+      ]
+    },
+    {
+      "criterion": "`scripts/backup.sh` grava `db.dump` e `uploads.tar.gz` em `<BACKUP_ROOT>/AAAA-MM-DD/`, mantém só os 7 mais recentes e sai com código diferente de 0 em falha",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "ran",
+          "source": "tool",
+          "command": "BACKUP_ROOT com espaco e 9 diretorios datados: scripts/backup.sh -> db.dump (PGDMP) + uploads.tar.gz; restaram 7 datados + pre-restore-*; diretorio irmao intacto",
+          "exit_code": 0,
+          "commit": "7709382"
+        },
+        {
+          "rung": "ran",
+          "source": "tool",
+          "command": "scripts/backup.sh com o backend parado -> backup completo (tar com 5 entradas)",
+          "exit_code": 0,
+          "commit": "7709382"
+        },
+        {
+          "rung": "ran",
+          "source": "tool",
+          "command": "falhas: KEEP=0 -> exit 2; projeto compose inexistente -> exit 1 sem diretorio parcial (asserted with echo exit=$?)",
+          "exit_code": 0,
+          "commit": "7709382"
+        }
+      ]
+    },
+    {
+      "criterion": "`scripts/restore.sh` exige confirmação explícita e restaura banco e anexos (ida e volta: documento com anexo apagado volta após o restore)",
+      "status": "satisfied",
+      "executable": true,
+      "evidence": [
+        {
+          "rung": "ran",
+          "source": "tool",
+          "command": "echo nao | scripts/restore.sh <dir> -> cancelado, exit 1, backend segue healthy",
+          "exit_code": 0,
+          "commit": "c1489b1"
+        },
+        {
+          "rung": "ran",
+          "source": "tool",
+          "command": "backup -> apagar smoke-v2 e criar pos-backup -> scripts/restore.sh --yes (2x) -> documentos [dl-1,dl-2,dl-3,smoke-v2] e anexo 200; restore do primeiro pre-restore-* -> [dl-1,dl-2,dl-3,pos-backup]; so o banco docsobs restou",
+          "exit_code": 0,
+          "commit": "7709382"
+        },
+        {
+          "rung": "ran",
+          "source": "tool",
+          "command": "tabela simulando migration mais nova criada antes do restore -> ausente depois (restore em banco temporario); procedimento documentado em projeto separado sem Caddy (docsobs-teste) -> restore exit 0, health ok",
+          "exit_code": 0,
+          "commit": "7709382"
+        }
+      ]
+    },
+    {
+      "criterion": "`.env.production.example` lista as variáveis de produção sem valores reais e o README aponta para o plano e o runbook",
+      "status": "satisfied",
+      "executable": false,
+      "evidence": [
+        {
+          "rung": "written",
+          "artifact": ".env.production.example",
+          "detail": "Todas as variaveis do plano (DOMAIN, APP_TIMEZONE, POSTGRES_*, JWT_SECRET, RUN_SEED, senhas do seed, SMTP_*, EMAIL_FROM, CRON_ENABLED, GOOGLE_*, EXTRACTION_*) mais COMPOSE_FILE, todas vazias ou com valores nao secretos; README.md secao Producao (Oracle Cloud) aponta para docs/deploy/oracle-cloud.md, que contem o runbook (fases 4 e 6). Conferido no judgment pass do Antigravity sobre 7709382."
+        }
+      ]
+    },
+    {
+      "criterion": "Judgment pass em contexto separado sem achado CRITICAL/HIGH aberto",
+      "status": "satisfied",
+      "executable": false,
+      "evidence": [
+        {
+          "rung": "written",
+          "detail": "Receipt 1: subagente Claude (contexto separado, somente leitura) sobre c1489b1, escopo full -> ship-with-changes, 0 CRITICAL/HIGH, 1 MEDIUM + 8 LOW, todos corrigidos em 7709382. Receipt 2: Antigravity agy -p --mode plan, modelo gemini-4-argon-high, sobre 7709382 (base 5d09de3), escopo full + recheck dos achados 1-9 -> VERDICT ship, 0 achados. Codex indisponivel (nao logado, 401)."
+        }
+      ]
+    }
+  ]
+}
