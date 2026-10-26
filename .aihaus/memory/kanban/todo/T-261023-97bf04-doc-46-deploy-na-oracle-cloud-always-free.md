@@ -37,5 +37,6 @@ DOC-46: hospedar o DocsObs gratuitamente para 1 usuário na Oracle Cloud Always 
 ## Log
 
 - 2026-10-23 criado pelo orquestrador; plano escrito em `docs/deploy/oracle-cloud.md`. Nada implementado ainda. Próximo passo: Fase 0 (contas) e Fase 1 (arquivos do repositório) conforme o plano.
+- 2026-10-26 Fase 1 entregue e validada localmente (amd64 e arm64 sob QEMU) na filha `T-261026-8742d6` (done): docker-compose.prod.yml, deploy/Caddyfile, .env.production.example, scripts/backup.sh e scripts/restore.sh. Próximo passo: Fase 0 (contas Oracle, DuckDNS, SMTP e Google OAuth, com o dono) e Fases 2-6 na VM. Decisão pendente do dono: VM nova A1.Flex (plano) ou o host existente `oracle-bot`.
 
 ## Evidence
