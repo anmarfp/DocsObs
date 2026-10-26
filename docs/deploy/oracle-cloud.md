@@ -1,7 +1,7 @@
 # Plano de implantação — Oracle Cloud Always Free (1 usuário)
 
 > Linear: **DOC-46** · Tarefa: `.aihaus/memory/kanban/todo/T-261023-97bf04-doc-46-deploy-na-oracle-cloud-always-free.md`
-> Status: **planejado, não implementado** (23/10/2026). Base: `main` após o PR #30.
+> Status: **Fase 1 implementada e validada localmente** (26/10/2026, tarefa `T-261026-8742d6`); fases 0 e 2–6 (contas, VM, DNS, integrações, operação) pendentes.
 
 ## Objetivo
 
@@ -43,11 +43,11 @@ Navegador ──HTTPS:443──▶ Caddy (TLS automático, Let's Encrypt)
 
 | # | Arquivo | Conteúdo |
 |---|---|---|
-| 1 | `docker-compose.prod.yml` (novo) | Override para produção: remove as portas de host de `postgres`, `backend` e `frontend` (`ports: !reset []`, suportado pelo Compose ≥ 2.24); adiciona o serviço `caddy` (`caddy:2-alpine`, portas `80:80` e `443:443`, `restart: unless-stopped`, volumes `caddy_data` e `caddy_config`, montando `deploy/Caddyfile`), `depends_on: frontend (healthy)`. Fixar `FRONTEND_URL` e `GOOGLE_REDIRECT_URI` a partir de `DOMAIN`. |
+| 1 | `docker-compose.prod.yml` (novo) | Override para produção: remove as portas de host de `postgres`, `backend` e `frontend` (`ports: !reset []`, suportado pelo Compose ≥ 2.24); adiciona o serviço `caddy` (`caddy:2-alpine`, portas `80:80` e `443:443`, `restart: unless-stopped`, volumes `caddy_data` e `caddy_config`, montando `deploy/Caddyfile`), `depends_on: frontend (healthy)`. `FRONTEND_URL` derivada de `DOMAIN`; exige `DOMAIN` e `POSTGRES_PASSWORD` (sem o padrão `postgres`). `GOOGLE_REDIRECT_URI` fica no `.env`: o backend recusa subir com a integração Google parcial, e o primeiro deploy acontece antes do cliente OAuth existir (Fase 5). |
 | 2 | `deploy/Caddyfile` (novo) | `{$DOMAIN} { encode gzip; reverse_proxy frontend:80; header Strict-Transport-Security "max-age=31536000" }`. `client_max_body_size` do Nginx (≥ 12M) continua valendo atrás do Caddy. |
 | 3 | `.env.production.example` (novo) | Todas as variáveis de produção comentadas (lista abaixo), sem valores reais. |
-| 4 | `scripts/backup.sh` (novo) | `docker compose exec -T postgres pg_dump -U $POSTGRES_USER -Fc $POSTGRES_DB` + `tar` do volume `backend_uploads` para `/var/backups/docsobs/AAAA-MM-DD/`; mantém 7 dias; código de saída ≠ 0 em falha. Opcional: enviar para Oracle Object Storage (20 GB grátis) com `oci os object put` ou `rclone`. |
-| 5 | `scripts/restore.sh` (novo) | Restaura um backup escolhido: para `backend`, `pg_restore --clean --if-exists`, repõe uploads, sobe de novo. Avisar que é destrutivo. |
+| 4 | `scripts/backup.sh` (novo) | `docker compose exec -T postgres pg_dump -U $POSTGRES_USER -Fc $POSTGRES_DB` + `tar` do volume `backend_uploads` para `/var/backups/docsobs/AAAA-MM-DD/` (montado em `AAAA-MM-DD.partial` e publicado só completo); mantém os 7 mais recentes; código de saída ≠ 0 em falha. Opcional: enviar para Oracle Object Storage (20 GB grátis) com `oci os object put` ou `rclone`. |
+| 5 | `scripts/restore.sh` (novo) | Restaura um backup escolhido após confirmação (`RESTAURAR` ou `--yes`): para o `backend`, restaura o dump num banco temporário e troca de nome com o ativo (guardado como `<POSTGRES_DB>_anterior`), repõe os uploads e sobe o backend. Em vez de `pg_restore --clean`, que deixaria tabelas de migrations mais novas no banco e quebraria o próximo `migrate deploy`; um dump inválido não toca o banco ativo. |
 | 6 | `README.md` | Seção "Produção (Oracle Cloud)" apontando para este plano e para o runbook. |
 | 7 | `.aihaus/memory/project/procedures.md` e `deployment.md` | Runbook de deploy/atualização/backup/restauração e topologia real (o orquestrador promove ao concluir). |
 | 8 | Validação ARM | Build das 3 imagens em `linux/arm64` (na própria VM ou `docker buildx build --platform linux/arm64`). O Prisma usa `binaryTargets = ["native", "linux-musl-openssl-3.0.x"]` e gera o client dentro da imagem, então deve resolver o engine ARM; **ainda não testado em ARM**. |
@@ -67,7 +67,7 @@ Navegador ──HTTPS:443──▶ Caddy (TLS automático, Let's Encrypt)
 | `CRON_ENABLED` | `true` (padrão); recálculo e digest às 00:00 em `APP_TIMEZONE` |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | do cliente OAuth |
 | `GOOGLE_REDIRECT_URI` | `https://<DOMAIN>/api/v1/calendar/google/callback` |
-| `FRONTEND_URL` | `https://<DOMAIN>` |
+| `FRONTEND_URL` | não precisa no `.env`: o override usa `https://<DOMAIN>` |
 | `GOOGLE_TOKEN_ENCRYPTION_KEY` | `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"` — **obrigatória após o DOC-44** (criptografia dos tokens OAuth) |
 | `EXTRACTION_SERVICE_URL` | `http://extraction:8000` só se o perfil `extraction` for usado |
 
@@ -122,7 +122,7 @@ Depois do 1º login: definir `RUN_SEED=false` no `.env` e repetir o `up -d` (o s
 
 | Rotina | Como |
 |---|---|
-| Backup diário | `crontab -e` → `30 2 * * * /home/ubuntu/DocsObs/scripts/backup.sh >> /var/log/docsobs-backup.log 2>&1` |
+| Backup diário | Uma vez: `sudo install -d -o ubuntu -g ubuntu /var/backups/docsobs`. Depois `crontab -e` → `30 2 * * * /home/ubuntu/DocsObs/scripts/backup.sh >> /home/ubuntu/docsobs-backup.log 2>&1` (o usuário `ubuntu` não escreve em `/var/log`) |
 | Teste de restauração | Restaurar o backup mais recente numa cópia (projeto compose separado) **uma vez** antes de considerar pronto, e depois mensalmente |
 | Atualização | `git pull && docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build --wait` (migrations rodam no entrypoint) |
 | Rollback | `git checkout <tag/commit anterior>` + `up -d --build`; como não há down-migrations, se a versão nova migrou o banco, restaurar o backup anterior |

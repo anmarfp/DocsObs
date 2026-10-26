@@ -1,0 +1,9 @@
+# DocsObs — Caddy na frente do frontend (Nginx), que faz proxy de /api/v1/* para o backend.
+# DOMAIN vem do .env (docker-compose.prod.yml). Com um domínio público o Caddy emite e
+# renova o certificado Let's Encrypt sozinho; exige DNS resolvido e a porta 80 aberta.
+{$DOMAIN} {
+	encode gzip
+	# ">" aplica o cabeçalho na resposta final, sem duplicar o HSTS que o backend já envia.
+	header >Strict-Transport-Security "max-age=31536000"
+	reverse_proxy frontend:80
+}

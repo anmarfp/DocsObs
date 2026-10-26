@@ -1,0 +1,52 @@
+# ==============================================================================
+# DocsObs — Override de Produção (Caddy + HTTPS, banco e API sem porta pública)
+# ==============================================================================
+# Plano: docs/deploy/oracle-cloud.md (DOC-46). Requer Docker Compose >= 2.24.
+# Subida:  docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build --wait
+# Variáveis: copie .env.production.example para .env e preencha.
+#
+# Só o Caddy publica portas no host (80 e 443). postgres, backend e frontend
+# ficam acessíveis apenas pela rede interna docsobs-network.
+
+services:
+  postgres:
+    ports: !reset []
+    environment:
+      # Sem o padrão "postgres" do compose base. Use valor alfanumérico: a senha
+      # entra sem escape na DATABASE_URL do backend.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}
+
+  backend:
+    ports: !reset []
+    environment:
+      FRONTEND_URL: https://${DOMAIN:?defina DOMAIN no .env}
+      APP_TIMEZONE:
+
+  frontend:
+    ports: !reset []
+
+  # ---------- Proxy Reverso HTTPS (Caddy, certificado Let's Encrypt automático) ----------
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      frontend:
+        condition: service_healthy
+    environment:
+      DOMAIN: ${DOMAIN:?defina DOMAIN no .env}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # caddy_data guarda os certificados emitidos; precisa persistir entre deploys.
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - docsobs-network
+
+volumes:
+  caddy_data:
+    driver: local
+  caddy_config:
+    driver: local
